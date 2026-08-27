@@ -17,7 +17,6 @@ import {
 } from "@fluentui/react-components";
 import { ArrowImportRegular, DeleteRegular, SettingsRegular } from "@fluentui/react-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import "@react-code-view/react/styles";
 import { DataverseMetadataService } from "../api/dataverseMetadata";
 import { ConfirmDialog, StatusMessageBar } from "../components/common";
 import { ActionBar, StatusBar } from "../components/layout";

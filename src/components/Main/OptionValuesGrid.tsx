@@ -1,4 +1,4 @@
-import { Button, makeStyles, tokens } from "@fluentui/react-components";
+import { Button, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { Fragment, useEffect, useState } from "react";
 import type { OptionDraftRow, ValidationIssue } from "../../models/optionSetModels";
 import { LanguagePickerRow, LanguageSubRow, OptionRowMain } from "../grid";
@@ -23,6 +23,7 @@ const useStyles = makeStyles({
     table: {
         width: "100%",
         borderCollapse: "collapse",
+        tableLayout: "fixed",
         fontSize: tokens.fontSizeBase300,
     },
     tableHead: {
@@ -30,15 +31,36 @@ const useStyles = makeStyles({
         borderBottom: `${tokens.strokeWidthThick} solid ${tokens.colorNeutralStroke1}`,
     },
     th: {
-        padding: tokens.spacingVerticalS,
+        padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalXS}`,
         textAlign: "left",
         fontWeight: tokens.fontWeightSemibold,
         color: tokens.colorNeutralForeground2,
     },
     td: {
-        padding: tokens.spacingVerticalS,
+        padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalXS}`,
         borderBottom: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
         verticalAlign: "middle",
+    },
+    dragCell: {
+        width: "42px",
+        minWidth: "36px",
+        paddingInline: "0",
+        textAlign: "center",
+    },
+    chevronCell: {
+        width: "32px",
+        minWidth: "32px",
+        paddingInline: "0",
+        textAlign: "center",
+    },
+    columnProps: {
+        width: "auto",
+    },
+    actionCell: {
+        width: "42px",
+        minWidth: "42px",
+        paddingInline: "0",
+        textAlign: "center",
     },
     rowError: {
         backgroundColor: tokens.colorPaletteRedBackground1,
@@ -54,12 +76,14 @@ const useStyles = makeStyles({
         alignItems: "center",
         gap: tokens.spacingHorizontalXS,
     },
-    caretBtn: {
+    chevronBtn: {
+        flexShrink: 0,
         minWidth: "24px",
+        width: "24px",
         padding: "0",
     },
     inputFlex: {
-        flex: 1,
+        minWidth: 0,
     },
     languageSubrow: {
         backgroundColor: tokens.colorNeutralBackground2,
@@ -68,7 +92,7 @@ const useStyles = makeStyles({
         display: "flex",
         alignItems: "center",
         gap: tokens.spacingHorizontalXS,
-        paddingLeft: `calc(${tokens.spacingHorizontalM} + 6px)`,
+        paddingLeft: `calc(${tokens.spacingHorizontalXXS} + 2px)`,
         minWidth: "0",
     },
     languageSubrowLabelCell: {
@@ -137,17 +161,21 @@ const useStyles = makeStyles({
     },
     dragHandle: {
         cursor: "grab",
+        width: "28px",
+        height: "28px",
+        minWidth: "28px",
         color: tokens.colorNeutralForeground3,
         userSelect: "none",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        fontSize: tokens.fontSizeBase400,
-        paddingInline: tokens.spacingHorizontalXS,
+        fontSize: tokens.fontSizeBase500,
         background: "none",
         border: "none",
-        padding: "0 2px",
+        borderRadius: tokens.borderRadiusSmall,
+        padding: 0,
         lineHeight: 1,
+        margin: "0 auto",
     },
     dragOverRow: {
         outline: `2px solid ${tokens.colorBrandStroke1}`,
@@ -199,10 +227,10 @@ export function OptionValuesGrid({
     const [dragOverRowId, setDragOverRowId] = useState<string | null>(null);
     const [applyOrderPending, setApplyOrderPending] = useState(false);
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => {
         setExpandedRows(new Set());
         setShowingLanguagePicker(null);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rows.map((r) => r.rowId).join(",")]);
 
     // Intersection of user-selected languages and Dataverse-installed languages
@@ -339,26 +367,35 @@ export function OptionValuesGrid({
 
             <div className={styles.tableWrapper}>
                 <table className={styles.table}>
+                    <colgroup>
+                        <col style={{ width: 42 }} />
+                        <col style={{ width: 32 }} />
+                        <col style={{ width: "20%" }} />
+                        <col style={{ width: "15%" }} />
+                        <col style={{ width: "auto" }} />
+                        <col style={{ width: 42 }} />
+                    </colgroup>
                     <thead className={styles.tableHead}>
                         <tr>
-                            <th className={styles.th} scope="col" />
-                            <th className={styles.th} scope="col">
+                            <th className={mergeClasses(styles.th, styles.dragCell)} scope="col" />
+                            <th className={mergeClasses(styles.th, styles.chevronCell)} scope="col" />
+                            <th className={mergeClasses(styles.th, styles.columnProps)} scope="col">
                                 Label
                             </th>
-                            <th className={styles.th} scope="col">
+                            <th className={mergeClasses(styles.th, styles.columnProps)} scope="col">
                                 Value
                             </th>
-                            <th className={styles.th} scope="col">
+                            <th className={mergeClasses(styles.th, styles.columnProps)} scope="col">
                                 Description
                             </th>
-                            <th className={styles.th} scope="col" />
+                            <th className={mergeClasses(styles.th, styles.actionCell)} scope="col" />
                         </tr>
                     </thead>
                     <tbody>
                         {rows.map((row) => {
-                           const isExpanded = expandedRows.has(row.rowId);
-                           const otherLanguages = row.labels.filter((entry) => entry.languageCode !== defaultLanguageCode);
-                           const existingLanguageCodes = row.labels.map((entry) => entry.languageCode);
+                            const isExpanded = expandedRows.has(row.rowId);
+                            const otherLanguages = row.labels.filter((entry) => entry.languageCode !== defaultLanguageCode);
+                            const existingLanguageCodes = row.labels.map((entry) => entry.languageCode);
 
                             return (
                                 <Fragment key={row.rowId}>
