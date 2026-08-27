@@ -36,6 +36,7 @@ export function LanguageSubRow({
     return (
         <tr key={`${row.rowId}-lang-${langEntry.languageCode}`} className={mergeClasses(styles.languageSubrow, hasLanguageRowError(row.rowId, langEntry.languageCode) ? styles.languageRowError : "")}>
             <td className={styles.td} />
+            <td className={styles.td} />
             <td className={mergeClasses(styles.td, styles.languageSubrowLabelCell)} colSpan={2}>
                 <div className={styles.languageSubrowCell}>
                     {editingLanguageCode?.rowId === row.rowId && editingLanguageCode.languageCode === langEntry.languageCode ? (

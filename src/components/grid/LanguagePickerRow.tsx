@@ -25,7 +25,7 @@ export function LanguagePickerRow({
 }: LanguagePickerRowProps): JSX.Element {
     return (
         <tr className={styles.languageAddRow}>
-            <td className={styles.td} colSpan={5}>
+            <td className={styles.td} colSpan={6}>
                 {showingLanguagePicker === rowId ? (
                     <div className={styles.addLanguageContainer}>
                         <LanguageCodeDropdown

@@ -1,19 +1,141 @@
 import { Button, makeStyles, Switch, Text, tokens } from "@fluentui/react-components";
 import { ArrowDownloadRegular } from "@fluentui/react-icons";
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
+import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { javascript } from "@codemirror/lang-javascript";
+import { json } from "@codemirror/lang-json";
+import { bracketMatching, defaultHighlightStyle, foldGutter, indentOnInput, syntaxHighlighting } from "@codemirror/language";
+import { Compartment, EditorState, type Extension } from "@codemirror/state";
+import { oneDark } from "@codemirror/theme-one-dark";
+import { drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter, highlightSpecialChars, keymap, lineNumbers } from "@codemirror/view";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useToolboxEvents } from "../../hooks/useToolboxAPI";
 import type { OptionSetDraft } from "../../models/optionSetModels";
 import { serializeDraftToCSharp, serializeDraftToCsv, serializeDraftToJavaScript, serializeDraftToTypeScript } from "../../services/codeGenerationService";
 
-const LazyCodeEditor = lazy(async () => {
-    const module = await import("@react-code-view/react");
-    return { default: module.CodeEditor };
+const lightEditorTheme = EditorView.theme({
+    "&": { backgroundColor: "#ffffff", color: "#24292f" },
+    ".cm-content": { caretColor: "#24292f" },
+    ".cm-cursor, .cm-dropCursor": { borderLeftColor: "#24292f" },
+    ".cm-gutters": { backgroundColor: "#f6f8fa", color: "#57606a", border: "none" },
+    ".cm-activeLine, .cm-activeLineGutter": { backgroundColor: "#f6f8fa" },
 });
 
-const LazyCopyCodeButton = lazy(async () => {
-    const module = await import("@react-code-view/react");
-    return { default: module.CopyCodeButton };
-});
+interface CodeMirrorEditorProps {
+    code: string;
+    onChange?: (code: string) => void;
+    readOnly: boolean;
+    language: string;
+    lineNumbers: boolean;
+    theme: "dark" | "light";
+    className?: string;
+}
+
+function getLanguageExtension(language: string): Extension {
+    switch (language) {
+        case "json":
+            return json();
+        case "typescript":
+            return javascript({ typescript: true });
+        case "javascript":
+            return javascript();
+        default:
+            return [];
+    }
+}
+
+function CodeMirrorEditor({ code, onChange, readOnly, language, lineNumbers: showLineNumbers, theme, className }: CodeMirrorEditorProps): JSX.Element {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const editorRef = useRef<EditorView | null>(null);
+    const lineNumbersCompartment = useRef(new Compartment()).current;
+    const languageCompartment = useRef(new Compartment()).current;
+    const readOnlyCompartment = useRef(new Compartment()).current;
+    const themeCompartment = useRef(new Compartment()).current;
+    const onChangeRef = useRef(onChange);
+
+    useEffect(() => {
+        onChangeRef.current = onChange;
+    }, [onChange]);
+
+    useEffect(() => {
+        if (!containerRef.current) {
+            return;
+        }
+
+        const editor = new EditorView({
+            state: EditorState.create({
+                doc: code,
+                extensions: [
+                    lineNumbersCompartment.of(showLineNumbers ? lineNumbers() : []),
+                    languageCompartment.of(getLanguageExtension(language)),
+                    readOnlyCompartment.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
+                    themeCompartment.of(theme === "dark" ? oneDark : lightEditorTheme),
+                    history(),
+                    drawSelection(),
+                    dropCursor(),
+                    indentOnInput(),
+                    bracketMatching(),
+                    foldGutter(),
+                    highlightSpecialChars(),
+                    highlightActiveLine(),
+                    highlightActiveLineGutter(),
+                    syntaxHighlighting(defaultHighlightStyle),
+                    keymap.of([...defaultKeymap, ...historyKeymap]),
+                    EditorView.updateListener.of((update) => {
+                        if (update.docChanged) {
+                            onChangeRef.current?.(update.state.doc.toString());
+                        }
+                    }),
+                ],
+            }),
+            parent: containerRef.current,
+        });
+        editorRef.current = editor;
+
+        return () => {
+            editor.destroy();
+            editorRef.current = null;
+        };
+        // The editor is initialized once; changing props is handled by the effects below.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+        const editor = editorRef.current;
+        if (!editor || editor.state.doc.toString() === code) {
+            return;
+        }
+
+        editor.dispatch({
+            changes: { from: 0, to: editor.state.doc.length, insert: code },
+        });
+    }, [code]);
+
+    useEffect(() => {
+        editorRef.current?.dispatch({
+            effects: lineNumbersCompartment.reconfigure(showLineNumbers ? lineNumbers() : []),
+        });
+    }, [lineNumbersCompartment, showLineNumbers]);
+
+    useEffect(() => {
+        editorRef.current?.dispatch({
+            effects: languageCompartment.reconfigure(getLanguageExtension(language)),
+        });
+    }, [language, languageCompartment]);
+
+    useEffect(() => {
+        editorRef.current?.dispatch({
+            effects: readOnlyCompartment.reconfigure([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
+        });
+    }, [readOnly, readOnlyCompartment]);
+
+    useEffect(() => {
+        editorRef.current?.dispatch({
+            effects: themeCompartment.reconfigure(theme === "dark" ? oneDark : lightEditorTheme),
+        });
+    }, [theme, themeCompartment]);
+
+    return <div ref={containerRef} className={className} />;
+}
 
 type OutputFormat = "json" | "typescript" | "javascript" | "csharp" | "csv";
 
@@ -69,14 +191,9 @@ const useStyles = makeStyles({
     },
     codeEditor: {
         minHeight: "600px",
-    },
-    loadingBox: {
-        minHeight: "600px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        color: tokens.colorNeutralForeground3,
-        fontSize: tokens.fontSizeBase300,
+        "& .cm-editor": {
+            minHeight: "600px",
+        },
     },
     errorBox: {
         padding: tokens.spacingVerticalM,
@@ -103,6 +220,8 @@ export function CodeTab({ codeText, codeError, onCodeChange, onApplyCode, draft,
     const [showLineNumbers, setShowLineNumbers] = useState(true);
     const [showCopyButton, setShowCopyButton] = useState(true);
     const [isDarkTheme, setIsDarkTheme] = useState(true);
+    const [isCopied, setIsCopied] = useState(false);
+    const copyTimeoutRef = useRef<number | undefined>(undefined);
 
     const syncTheme = useCallback((): void => {
         if (window.toolboxAPI?.utils?.getCurrentTheme) {
@@ -116,6 +235,14 @@ export function CodeTab({ codeText, codeError, onCodeChange, onApplyCode, draft,
     useEffect(() => {
         syncTheme();
     }, [syncTheme]);
+
+    useEffect(() => {
+        return () => {
+            if (copyTimeoutRef.current !== undefined) {
+                window.clearTimeout(copyTimeoutRef.current);
+            }
+        };
+    }, []);
 
     useToolboxEvents(
         useCallback(
@@ -171,6 +298,19 @@ export function CodeTab({ codeText, codeError, onCodeChange, onApplyCode, draft,
         }
     };
 
+    const handleCopy = async (): Promise<void> => {
+        try {
+            await navigator.clipboard.writeText(displayedCode);
+            setIsCopied(true);
+            if (copyTimeoutRef.current !== undefined) {
+                window.clearTimeout(copyTimeoutRef.current);
+            }
+            copyTimeoutRef.current = window.setTimeout(() => setIsCopied(false), 2000);
+        } catch {
+            setIsCopied(false);
+        }
+    };
+
     return (
         <div className={styles.root}>
             <div className={styles.toolbar}>
@@ -202,20 +342,20 @@ export function CodeTab({ codeText, codeError, onCodeChange, onApplyCode, draft,
             <Text className={styles.stats}>{`Format: ${FORMAT_LABELS[outputFormat]} | ${lineCount} lines | ${charCount} chars`}</Text>
 
             <div className={styles.codeViewHost}>
-                <div className={isDarkTheme ? "rcv-theme-dark" : "rcv-theme-default"}>
-                    <Suspense fallback={<div className={styles.loadingBox}>Loading code editor…</div>}>
-                        <LazyCodeEditor
-                            code={displayedCode}
-                            onChange={isEditableMode ? onCodeChange : undefined}
-                            readOnly={!isEditableMode}
-                            language={language}
-                            lineNumbers={showLineNumbers}
-                            theme={isDarkTheme ? "dark" : "light"}
-                            className={styles.codeEditor}
-                        />
-                        {showCopyButton && <LazyCopyCodeButton code={displayedCode} aria-label="Copy generated code" />}
-                    </Suspense>
-                </div>
+                <CodeMirrorEditor
+                    code={displayedCode}
+                    onChange={isEditableMode ? onCodeChange : undefined}
+                    readOnly={!isEditableMode}
+                    language={language}
+                    lineNumbers={showLineNumbers}
+                    theme={isDarkTheme ? "dark" : "light"}
+                    className={styles.codeEditor}
+                />
+                {showCopyButton && (
+                    <Button appearance="subtle" size="small" onClick={() => void handleCopy()} aria-label="Copy generated code">
+                        {isCopied ? "Copied" : "Copy"}
+                    </Button>
+                )}
             </div>
 
             {isEditableMode && codeError && (
