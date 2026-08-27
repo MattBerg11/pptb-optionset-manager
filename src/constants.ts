@@ -2,6 +2,9 @@ import type { OptionSetDraft } from "./models/optionSetModels";
 
 export const DEFAULT_LANGUAGE_CODE = 1033;
 
+export const MIN_OPTION_VALUE = -2147483648;
+export const MAX_OPTION_VALUE = 2147483647;
+
 export const SUPPORTED_IMPORT_EXTENSIONS = ["csv", "json"] as const;
 
 export const EMPTY_DRAFT_TEMPLATE: OptionSetDraft = {

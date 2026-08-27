@@ -4,7 +4,7 @@ Updates an existing option value in a global or local option set.
 
 **Endpoint:** `POST [org]/api/data/v9.2/UpdateOptionValue`  
 **Namespace:** `Microsoft.Dynamics.CRM`  
-**Reference:** https://learn.microsoft.com/en-us/power-apps/developer/data-platform/webapi/reference/updateoptionvalue
+**Reference:** `https://learn.microsoft.com/en-us/power-apps/developer/data-platform/webapi/reference/updateoptionvalue`
 
 ---
 
@@ -87,7 +87,7 @@ Updates an existing option value in a global or local option set.
 ## Parameters
 
 | Parameter | Type | Required | Description |
-|---|---|---|---|
+| --- |---|---|---|
 | `OptionSetName` | `Edm.String` | Conditional | Name of the global option set. Required when targeting a global option set; omit for local. |
 | `EntityLogicalName` | `Edm.String` | Conditional | Logical name of the entity. Required together with `AttributeLogicalName` when targeting a local option set. |
 | `AttributeLogicalName` | `Edm.String` | Conditional | Logical name of the picklist attribute. Required together with `EntityLogicalName` when targeting a local option set. |

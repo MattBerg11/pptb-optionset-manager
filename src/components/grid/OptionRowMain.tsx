@@ -1,5 +1,6 @@
 import { Button, Input, mergeClasses } from "@fluentui/react-components";
-import { ChevronDownRegular, ChevronRightRegular, DeleteRegular } from "@fluentui/react-icons";
+import { ChevronDownRegular, ChevronRightRegular, DeleteRegular, ReOrderDotsVerticalRegular } from "@fluentui/react-icons";
+import { MAX_OPTION_VALUE, MIN_OPTION_VALUE } from "../../constants";
 import type { OptionDraftRow } from "../../models/optionSetModels";
 
 interface OptionRowMainProps {
@@ -44,7 +45,11 @@ export function OptionRowMain({
     return (
         <tr
             id={`row-${row.rowId}`}
-            className={mergeClasses(hasMainRowError(row.rowId) ? styles.rowError : "", apiSuccessRowIds?.has(row.rowId) ? styles.rowSuccess : "", dragOverRowId === row.rowId ? styles.dragOverRow : "")}
+            className={mergeClasses(
+                hasMainRowError(row.rowId) ? styles.rowError : "",
+                apiSuccessRowIds?.has(row.rowId) ? styles.rowSuccess : "",
+                dragOverRowId === row.rowId ? styles.dragOverRow : ""
+            )}
             tabIndex={0}
             draggable={true}
             onKeyDown={(event) => {
@@ -83,28 +88,35 @@ export function OptionRowMain({
                 setDragOverRowId(null);
             }}
         >
-            <td className={styles.td}>
+            {/* Reorder handle cell */}
+            <td className={mergeClasses(styles.td, styles.dragCell)}>
                 <button className={styles.dragHandle} aria-label="Drag to reorder, or use Alt+Up/Down">
-                    ⠿
+                    <ReOrderDotsVerticalRegular />
                 </button>
             </td>
-            <td className={styles.td}>
+            {/* Chevron cell */}
+            <td className={mergeClasses(styles.td, styles.chevronCell)}>
+                {!singleLanguageMode && (
+                    <Button
+                        appearance="subtle"
+                        size="small"
+                        icon={isExpanded ? <ChevronDownRegular /> : <ChevronRightRegular />}
+                        className={styles.chevronBtn}
+                        onClick={() => toggleRowExpansion(row.rowId)}
+                        aria-label={isExpanded ? "Collapse language options" : "Expand language options"}
+                        aria-expanded={isExpanded}
+                    />
+                )}
+            </td>
+            {/* label cell */}
+            <td className={mergeClasses(styles.td, styles.labelColumn)}>
                 <div className={styles.labelCell}>
-                    {!singleLanguageMode && (
-                        <Button
-                            appearance="subtle"
-                            size="small"
-                            icon={isExpanded ? <ChevronDownRegular /> : <ChevronRightRegular />}
-                            className={styles.caretBtn}
-                            onClick={() => toggleRowExpansion(row.rowId)}
-                            aria-label={isExpanded ? "Collapse language options" : "Expand language options"}
-                            aria-expanded={isExpanded}
-                        />
-                    )}
                     <Input
                         type="text"
                         size="small"
                         value={defaultLabel?.label ?? ""}
+                        className={styles.inputFlex}
+                        style={{ width: "100%" }}
                         onChange={(event) => {
                             onUpdateRow(row.rowId, (current) => {
                                 const labels = [...current.labels];
@@ -127,15 +139,20 @@ export function OptionRowMain({
                                 };
                             });
                         }}
-                        className={styles.inputFlex}
                     />
                 </div>
             </td>
-            <td className={styles.td}>
+            {/* value column */}
+            <td className={mergeClasses(styles.td, styles.valueColumn)}>
                 <Input
                     type="number"
                     size="small"
+                    min={MIN_OPTION_VALUE}
+                    max={MAX_OPTION_VALUE}
+                    step={0}
                     value={row.optionValue?.toString() ?? ""}
+                    className={styles.inputFlex}
+                    style={{ width: "100%" }}
                     onChange={(event) => {
                         const value = (event.target as HTMLInputElement).value;
                         const parsed = value ? Number(value) : undefined;
@@ -146,11 +163,14 @@ export function OptionRowMain({
                     }}
                 />
             </td>
-            <td className={styles.td}>
+            {/* description column */}
+            <td className={mergeClasses(styles.td, styles.descriptionColumn)}>
                 <Input
                     type="text"
                     size="small"
                     value={defaultLabel?.description ?? ""}
+                    className={styles.inputFlex}
+                    style={{ width: "100%" }}
                     onChange={(event) => {
                         onUpdateRow(row.rowId, (current) => {
                             const labels = [...current.labels];
@@ -175,10 +195,8 @@ export function OptionRowMain({
                     }}
                 />
             </td>
-            <td className={styles.td}>
-                {rows.length > 1 && (
-                    <Button appearance="subtle" size="small" icon={<DeleteRegular />} onClick={() => onRemoveRow(row.rowId)} title="Remove row" aria-label="Remove row" />
-                )}
+            <td className={mergeClasses(styles.td, styles.actionCell)}>
+                {rows.length > 1 && <Button appearance="subtle" size="small" icon={<DeleteRegular />} onClick={() => onRemoveRow(row.rowId)} title="Remove row" aria-label="Remove row" />}
             </td>
         </tr>
     );

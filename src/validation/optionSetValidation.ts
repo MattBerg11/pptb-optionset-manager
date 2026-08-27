@@ -1,4 +1,8 @@
-import { DEFAULT_LANGUAGE_CODE } from "../constants";
+import {
+  DEFAULT_LANGUAGE_CODE,
+  MAX_OPTION_VALUE,
+  MIN_OPTION_VALUE,
+} from "../constants";
 import type {
   OptionDraftRow,
   OptionSetDraft,
@@ -17,6 +21,10 @@ function hasLabelForLanguage(
 
 function isPositiveInteger(value: number): boolean {
   return Number.isInteger(value) && value > 0;
+}
+
+function isOptionValue(value: number): boolean {
+  return Number.isInteger(value) && value >= MIN_OPTION_VALUE && value <= MAX_OPTION_VALUE;
 }
 
 export function validateOptionSetDraft(
@@ -115,11 +123,11 @@ export function validateOptionSetDraft(
     const rowId = row.rowId;
 
     if (row.optionValue !== undefined) {
-      if (!isPositiveInteger(row.optionValue)) {
+      if (!isOptionValue(row.optionValue)) {
         issues.push({
           code: "INVALID_OPTION_VALUE",
           severity: "error",
-          message: "Option value must be a positive integer.",
+          message: `Option value must be an integer between ${MIN_OPTION_VALUE} and ${MAX_OPTION_VALUE}.`,
           rowId,
           fieldPath: `rows.${index}.optionValue`,
         });
