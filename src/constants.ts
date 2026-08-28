@@ -1,6 +1,7 @@
+import { DEFAULT_LANGUAGE_CODE } from "./components/languages/languageConfig";
 import type { OptionSetDraft } from "./models/optionSetModels";
 
-export const DEFAULT_LANGUAGE_CODE = 1033;
+export { DEFAULT_LANGUAGE_CODE };
 
 export const MIN_OPTION_VALUE = -2147483648;
 export const MAX_OPTION_VALUE = 2147483647;
@@ -16,7 +17,7 @@ export const EMPTY_DRAFT_TEMPLATE: OptionSetDraft = {
   solutionUniqueName: "",
   publisherPrefix: "",
   optionValuePrefix: 98922,
-  defaultLanguageCode: 1033,
+  defaultLanguageCode: DEFAULT_LANGUAGE_CODE,
   entityLogicalName: "",
   attributeLogicalName: "",
   rows: [
@@ -25,7 +26,7 @@ export const EMPTY_DRAFT_TEMPLATE: OptionSetDraft = {
       externalKey: "",
       labels: [
         {
-          languageCode: 1033,
+          languageCode: DEFAULT_LANGUAGE_CODE,
           label: "",
           description: "",
         },
@@ -43,7 +44,7 @@ export const SAMPLE_CODE_PAYLOAD: OptionSetDraft = {
   solutionUniqueName: "",
   publisherPrefix: "mb",
   optionValuePrefix: 98922,
-  defaultLanguageCode: 1033,
+  defaultLanguageCode: DEFAULT_LANGUAGE_CODE,
   entityLogicalName: "",
   attributeLogicalName: "",
   rows: [
@@ -52,7 +53,7 @@ export const SAMPLE_CODE_PAYLOAD: OptionSetDraft = {
       externalKey: "LOW",
       labels: [
         {
-          languageCode: 1033,
+          languageCode: DEFAULT_LANGUAGE_CODE,
           label: "Low",
           description: "Low priority",
         },

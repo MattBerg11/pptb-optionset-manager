@@ -1,16 +1,15 @@
 import { Button, Input, mergeClasses } from "@fluentui/react-components";
 import { DeleteRegular } from "@fluentui/react-icons";
 import type { LanguageEntry, OptionDraftRow } from "../../models/optionSetModels";
-import { LanguageCodeDropdown } from "../common/LanguageCodeDropdown";
+import { LanguageMenu } from "../common/LanguageCodeDropdown";
 import { LanguageFlag } from "../languages/LanguageFlag";
 
 interface LanguageSubRowProps {
     row: OptionDraftRow;
     langEntry: LanguageEntry;
     styles: Record<string, string>;
-    editingLanguageCode: { rowId: string; languageCode: number } | null;
-    setEditingLanguageCode: (value: { rowId: string; languageCode: number } | null) => void;
     existingLanguageCodes: number[];
+    availableLanguageCodes: number[];
     sortLanguagesByCode: boolean;
     hasLanguageRowError: (rowId: string, languageCode: number) => boolean;
     onUpdateRow: (rowId: string, updater: (row: OptionDraftRow) => OptionDraftRow) => void;
@@ -23,9 +22,8 @@ export function LanguageSubRow({
     row,
     langEntry,
     styles,
-    editingLanguageCode,
-    setEditingLanguageCode,
     existingLanguageCodes,
+    availableLanguageCodes,
     sortLanguagesByCode,
     hasLanguageRowError,
     onUpdateRow,
@@ -36,40 +34,35 @@ export function LanguageSubRow({
     return (
         <tr key={`${row.rowId}-lang-${langEntry.languageCode}`} className={mergeClasses(styles.languageSubrow, hasLanguageRowError(row.rowId, langEntry.languageCode) ? styles.languageRowError : "")}>
             <td className={styles.td} />
-            <td className={styles.td} />
-            <td className={mergeClasses(styles.td, styles.languageSubrowLabelCell)} colSpan={2}>
-                <div className={styles.languageSubrowCell}>
-                    {editingLanguageCode?.rowId === row.rowId && editingLanguageCode.languageCode === langEntry.languageCode ? (
-                        <div className={styles.languagePicker}>
-                            <LanguageCodeDropdown
-                                value={langEntry.languageCode}
-                                onChange={(newCode) => {
-                                    onUpdateRow(row.rowId, (current) => {
-                                        const labels = current.labels.filter((entry) => entry.languageCode !== langEntry.languageCode);
-                                        labels.push({
-                                            languageCode: newCode,
-                                            label: langEntry.label,
-                                            description: langEntry.description ?? "",
-                                        });
-                                        return { ...current, labels };
-                                    });
-                                    setEditingLanguageCode(null);
-                                }}
-                                excludeCodes={existingLanguageCodes}
-                                sortByCode={sortLanguagesByCode}
-                            />
-                        </div>
-                    ) : (
+            <td className={mergeClasses(styles.td, styles.chevronCell)}>
+                <LanguageMenu
+                    trigger={
                         <Button
                             appearance="subtle"
                             className={styles.languageFlagButton}
-                            onClick={() => setEditingLanguageCode({ rowId: row.rowId, languageCode: langEntry.languageCode })}
                             aria-label={`Change language ${langEntry.languageCode}`}
                             title={`Change language ${langEntry.languageCode}`}
                         >
                             <LanguageFlag code={langEntry.languageCode} title={`Language ${langEntry.languageCode}`} className={styles.languageFlag} />
                         </Button>
-                    )}
+                    }
+                    onChange={(newCode) => {
+                        onUpdateRow(row.rowId, (current) => {
+                            const labels = current.labels.filter((entry) => entry.languageCode !== langEntry.languageCode);
+                            labels.push({
+                                languageCode: newCode,
+                                label: langEntry.label,
+                                description: langEntry.description ?? "",
+                            });
+                            return { ...current, labels };
+                        });
+                    }}
+                    excludeCodes={existingLanguageCodes.filter((code) => code !== langEntry.languageCode)}
+                    availableLanguageCodes={[...new Set([...availableLanguageCodes, langEntry.languageCode])]}
+                    sortByCode={sortLanguagesByCode}
+                />
+            </td>
+            <td className={mergeClasses(styles.td, styles.languageSubrowLabelCell)}>
                     <Input
                         type="text"
                         size="small"
@@ -78,7 +71,6 @@ export function LanguageSubRow({
                         placeholder="Label"
                         className={styles.inputFlex}
                     />
-                </div>
             </td>
             <td className={mergeClasses(styles.td, styles.languageSubrowDescriptionCell)}>
                 <Input
