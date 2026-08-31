@@ -65,8 +65,12 @@ export function ActionBar({ errorCount, warningCount, hasValidated, actionButton
                             {warningCount > 0 && `, ${warningCount} warning${warningCount !== 1 ? "s" : ""}`}
                         </span>
                     )}
-                    {hasValidated && errorCount === 0 && warningCount > 0 && <span className={styles.validateStatusWarning}>{warningCount} warning{warningCount !== 1 ? "s" : ""}</span>}
-                    {hasValidated && errorCount === 0 && warningCount === 0 && <span className={styles.validateOk}>✓ Valid</span>}
+                    {hasValidated && errorCount === 0 && warningCount > 0 && (
+                        <span className={styles.validateStatusWarning}>
+                            {warningCount} warning{warningCount !== 1 ? "s" : ""}
+                        </span>
+                    )}
+                    {hasValidated && errorCount === 0 && warningCount === 0 && <span className={styles.validateOk}>\u2713 Valid</span>}
                 </div>
 
                 <div className={styles.actionButtons}>

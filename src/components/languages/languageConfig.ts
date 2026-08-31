@@ -38,6 +38,11 @@ import hindiFlagUrl from "flag-icons/flags/4x3/in.svg?url";
 import malayFlagUrl from "flag-icons/flags/4x3/my.svg?url";
 import chineseSimplifiedFlagUrl from "flag-icons/flags/4x3/cn.svg?url";
 import portuguesePortugalFlagUrl from "flag-icons/flags/4x3/pt.svg?url";
+import basqueFlagUrl from "flag-icons/flags/4x3/es-pv.svg?url";
+import chineseHKFlagUrl from "flag-icons/flags/4x3/hk.svg?url";
+import galicianFlagUrl from "flag-icons/flags/4x3/es-ga.svg?url";
+import kazakhFlagUrl from "flag-icons/flags/4x3/kz.svg?url";
+import serbianFlagUrl from "flag-icons/flags/4x3/rs.svg?url";
 
 export const useFlagStyles = makeStyles({
     optionContent: {
@@ -74,9 +79,9 @@ export interface LanguageConfig {
 
 export const LANGUAGE_CONFIGS: LanguageConfig[] = [
     { code: 1025, name: "Arabic", emoji: "🇸🇦", flagUrl: arabicFlagUrl },
-    { code: 1026, name: "Bulgarian", emoji: "🇧🇬", flagUrl: bulgarianFlagUrl },
-    { code: 1027, name: "Catalan", emoji: "🏳", flagUrl: catalanFlagUrl },
-    { code: 1028, name: "Chinese (Traditional)", emoji: "🇹🇼", flagUrl: chineseTraditionalFlagUrl },
+    { code: 1026, name: "Bulgarian (Bulgaria)", emoji: "🇧🇬", flagUrl: bulgarianFlagUrl },
+    { code: 1027, name: "Catalan (Catalan)", emoji: "🏳", flagUrl: catalanFlagUrl },
+    { code: 1028, name: "Chinese (Taiwan)", emoji: "🇹🇼", flagUrl: chineseTraditionalFlagUrl },
     { code: 1029, name: "Czech", emoji: "🇨🇿", flagUrl: czechFlagUrl },
     { code: 1030, name: "Danish", emoji: "🇩🇰", flagUrl: danishFlagUrl },
     { code: 1031, name: "German", emoji: "🇩🇪", flagUrl: germanFlagUrl },
@@ -91,28 +96,34 @@ export const LANGUAGE_CONFIGS: LanguageConfig[] = [
     { code: 1041, name: "Japanese", emoji: "🇯🇵", flagUrl: japaneseFlagUrl },
     { code: 1042, name: "Korean", emoji: "🇰🇷", flagUrl: koreanFlagUrl },
     { code: 1043, name: "Dutch", emoji: "🇳🇱", flagUrl: dutchFlagUrl },
-    { code: 1044, name: "Norwegian", emoji: "🇳🇴", flagUrl: norwegianFlagUrl },
+    { code: 1044, name: "Norwegian (Bokmål)", emoji: "🇳🇴", flagUrl: norwegianFlagUrl },
     { code: 1045, name: "Polish", emoji: "🇵🇱", flagUrl: polishFlagUrl },
     { code: 1046, name: "Portuguese (Brazil)", emoji: "🇧🇷", flagUrl: brazilianFlagUrl },
-    { code: 1048, name: "Romanian", emoji: "🇷🇴", flagUrl: romanianFlagUrl },
+    { code: 1048, name: "Romanian (Romania)", emoji: "🇷🇴", flagUrl: romanianFlagUrl },
     { code: 1049, name: "Russian", emoji: "🇷🇺", flagUrl: russianFlagUrl },
-    { code: 1050, name: "Croatian", emoji: "🇭🇷", flagUrl: croatianFlagUrl },
-    { code: 1051, name: "Slovak", emoji: "🇸🇰", flagUrl: slovakFlagUrl },
+    { code: 1050, name: "Croatian (Croatia)", emoji: "🇭🇷", flagUrl: croatianFlagUrl },
+    { code: 1051, name: "Slovak (Slovakia)", emoji: "🇸🇰", flagUrl: slovakFlagUrl },
     { code: 1053, name: "Swedish", emoji: "🇸🇪", flagUrl: swedishFlagUrl },
     { code: 1054, name: "Thai", emoji: "🇹🇭", flagUrl: thaiFlagUrl },
     { code: 1055, name: "Turkish", emoji: "🇹🇷", flagUrl: turkishFlagUrl },
     { code: 1057, name: "Indonesian", emoji: "🇮🇩", flagUrl: indonesianFlagUrl },
-    { code: 1058, name: "Ukrainian", emoji: "🇺🇦", flagUrl: ukrainianFlagUrl },
-    { code: 1060, name: "Slovenian", emoji: "🇸🇮", flagUrl: slovenianFlagUrl },
-    { code: 1061, name: "Estonian", emoji: "🇪🇪", flagUrl: estonianFlagUrl },
-    { code: 1062, name: "Latvian", emoji: "🇱🇻", flagUrl: latvianFlagUrl },
-    { code: 1063, name: "Lithuanian", emoji: "🇱🇹", flagUrl: lithuanianFlagUrl },
+    { code: 1058, name: "Ukrainian (Ukraine)", emoji: "🇺🇦", flagUrl: ukrainianFlagUrl },
+    { code: 1060, name: "Slovenian (Slovenia)", emoji: "🇸🇮", flagUrl: slovenianFlagUrl },
+    { code: 1061, name: "Estonian (Estonia)", emoji: "🇪🇪", flagUrl: estonianFlagUrl },
+    { code: 1062, name: "Latvian (Latvia)", emoji: "🇱🇻", flagUrl: latvianFlagUrl },
+    { code: 1063, name: "Lithuanian (Lithuania)", emoji: "🇱🇹", flagUrl: lithuanianFlagUrl },
     { code: 1066, name: "Vietnamese", emoji: "🇻🇳", flagUrl: vietnameseFlagUrl },
-    { code: 1081, name: "Hindi", emoji: "🇮🇳", flagUrl: hindiFlagUrl },
+    { code: 1069, name: "Basque (Basque)", emoji: "🏴", flagUrl: basqueFlagUrl },
+    { code: 1074, name: "Serbian (Latin, Serbia)", emoji: "🇷🇸", flagUrl: serbianFlagUrl },
+    { code: 1076, name: "Chinese (Hong Kong S.A.R.)", emoji: "🇭🇰", flagUrl: chineseHKFlagUrl },
+    { code: 1081, name: "Hindi (India)", emoji: "🇮🇳", flagUrl: hindiFlagUrl },
     { code: 1086, name: "Malay", emoji: "🇲🇾", flagUrl: malayFlagUrl },
-    { code: 2052, name: "Chinese (Simplified)", emoji: "🇨🇳", flagUrl: chineseSimplifiedFlagUrl },
+    { code: 1087, name: "Kazakh (Kazakhstan)", emoji: "🇰🇿", flagUrl: kazakhFlagUrl },
+    { code: 1110, name: "Galician (Galician)", emoji: "🏴", flagUrl: galicianFlagUrl },
+    { code: 2052, name: "Chinese (PRC)", emoji: "🇨🇳", flagUrl: chineseSimplifiedFlagUrl },
     { code: 2070, name: "Portuguese (Portugal)", emoji: "🇵🇹", flagUrl: portuguesePortugalFlagUrl },
-    { code: 3082, name: "Spanish (Spain)", emoji: "🇪🇸", flagUrl: spanishFlagUrl },
+    { code: 3082, name: "Spanish", emoji: "🇪🇸", flagUrl: spanishFlagUrl },
+    { code: 3098, name: "Serbian (Cyrillic)", emoji: "🇷🇸", flagUrl: serbianFlagUrl },
 ];
 
 export function getLanguageByCode(code: number): LanguageConfig | undefined {

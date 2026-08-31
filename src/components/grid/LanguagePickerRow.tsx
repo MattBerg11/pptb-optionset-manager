@@ -1,4 +1,4 @@
-import { Button } from "@fluentui/react-components";
+import { Button, Tooltip } from "@fluentui/react-components";
 import { LanguageMenu } from "../common/LanguageCodeDropdown";
 
 interface LanguagePickerRowProps {
@@ -18,10 +18,12 @@ export function LanguagePickerRow({
     onAddLanguage,
     sortLanguagesByCode,
 }: LanguagePickerRowProps): JSX.Element {
+    const remainingCodes = availableLanguageCodes.filter((c) => !existingLanguageCodes.includes(c));
+
     return (
         <tr className={styles.languageAddRow}>
             <td className={styles.td} colSpan={6}>
-                {availableLanguageCodes.length === 0 ? (
+                {remainingCodes.length === 0 ? (
                     <div className={styles.addLanguageContainer}>
                         <span className={styles.secondaryText}>No additional languages are available in this environment.</span>
                     </div>
@@ -29,9 +31,11 @@ export function LanguagePickerRow({
                     <div className={styles.addLanguageContainer}>
                         <LanguageMenu
                             trigger={
-                                <Button appearance="secondary" size="small" className={styles.addLanguageButton}>
-                                    + Add Language
-                                </Button>
+                                <Tooltip content="Add another language translation to this option" relationship="description">
+                                    <Button appearance="secondary" size="small" className={styles.addLanguageButton}>
+                                        + Add Language
+                                    </Button>
+                                </Tooltip>
                             }
                             onChange={(code) => onAddLanguage(rowId, code)}
                             excludeCodes={existingLanguageCodes}

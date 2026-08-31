@@ -314,7 +314,7 @@ export function CodeTab({ codeText, codeError, onCodeChange, onApplyCode, draft,
     return (
         <div className={styles.root}>
             <div className={styles.toolbar}>
-                <div className={styles.formatButtons}>
+                <div className={styles.formatButtons} role="group" aria-label="Output format">
                     {(["json", "typescript", "javascript", "csharp", "csv"] as OutputFormat[]).map((fmt) => (
                         <Button key={fmt} appearance={outputFormat === fmt ? "primary" : "secondary"} size="small" onClick={() => setOutputFormat(fmt)}>
                             {FORMAT_LABELS[fmt]}
@@ -356,10 +356,13 @@ export function CodeTab({ codeText, codeError, onCodeChange, onApplyCode, draft,
                         {isCopied ? "Copied" : "Copy"}
                     </Button>
                 )}
+                <div aria-live="polite" aria-atomic="true" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0,0,0,0)", whiteSpace: "nowrap" }}>
+                    {isCopied && "Code copied to clipboard"}
+                </div>
             </div>
 
             {isEditableMode && codeError && (
-                <div className={styles.errorBox}>
+                <div className={styles.errorBox} role="alert" aria-live="assertive">
                     <strong>Code parse error:</strong> {codeError}
                 </div>
             )}

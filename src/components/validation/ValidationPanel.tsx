@@ -90,7 +90,7 @@ export function ValidationPanel({ issues, onDismiss, onIssueClick, panelRef }: V
     const warningCount = issues.filter((issue) => issue.severity === "warning").length;
 
     return (
-        <section ref={panelRef} className={styles.panel} aria-label="Validation issues">
+        <section ref={panelRef} className={styles.panel} aria-label="Validation issues" aria-live="polite" aria-relevant="additions removals">
             <div className={styles.header}>
                 <span>Validation issues</span>
                 <div className={styles.headerActions}>

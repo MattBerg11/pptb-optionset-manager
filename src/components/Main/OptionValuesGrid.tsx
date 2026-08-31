@@ -1,5 +1,6 @@
-import { Button, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
-import { Fragment, useEffect, useState } from "react";
+import { Button, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { ChevronDownRegular, ChevronRightRegular } from "@fluentui/react-icons";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { OptionDraftRow, ValidationIssue } from "../../models/optionSetModels";
 import { LanguagePickerRow, LanguageSubRow, OptionRowMain } from "../grid";
 
@@ -42,9 +43,10 @@ const useStyles = makeStyles({
         verticalAlign: "middle",
     },
     dragCell: {
-        width: "42px",
-        minWidth: "36px",
+        width: "24px",
+        minWidth: "24px",
         paddingInline: "0",
+        padding: "0 0",
         textAlign: "center",
     },
     chevronCell: {
@@ -57,6 +59,12 @@ const useStyles = makeStyles({
         width: "auto",
     },
     actionCell: {
+        width: "78px",
+        minWidth: "78px",
+        paddingInline: "0",
+        textAlign: "center",
+    },
+    actionCellSingle: {
         width: "42px",
         minWidth: "42px",
         paddingInline: "0",
@@ -119,6 +127,24 @@ const useStyles = makeStyles({
     languagePicker: {
         minWidth: "125px",
     },
+    actionButtons: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: tokens.spacingHorizontalXXS,
+    },
+    metadataButton: {
+        minWidth: "28px",
+    },
+    metadataPopover: {
+        display: "flex",
+        flexDirection: "column",
+        gap: tokens.spacingVerticalM,
+        minWidth: "220px",
+    },
+    metadataField: {
+        width: "100%",
+    },
     secondaryText: {
         color: tokens.colorNeutralForeground2,
         fontSize: tokens.fontSizeBase200,
@@ -180,6 +206,31 @@ const useStyles = makeStyles({
     dragOverRow: {
         outline: `2px solid ${tokens.colorBrandStroke1}`,
     },
+    colorSwatch: {
+        width: "16px",
+        height: "16px",
+        minWidth: "16px",
+        borderRadius: tokens.borderRadiusSmall,
+        border: `1px solid ${tokens.colorNeutralStroke1}`,
+        padding: 0,
+        cursor: "pointer",
+        flexShrink: 0,
+        background: "transparent",
+    },
+    colorInput: {
+        position: "absolute",
+        opacity: 0,
+        width: 0,
+        height: 0,
+        padding: 0,
+        border: "none",
+        pointerEvents: "none",
+    },
+    numberInput: {
+        "@media (prefers-color-scheme: dark)": {
+            colorScheme: "dark",
+        },
+    },
 });
 
 interface OptionValuesGridProps {
@@ -199,6 +250,12 @@ interface OptionValuesGridProps {
     apiErrorRowIds?: ReadonlySet<string>;
     apiSuccessRowIds?: ReadonlySet<string>;
     singleLanguageMode?: boolean;
+    hideRowAdvancedProperties?: boolean;
+    autoExpandSubrowsOnAdd?: boolean;
+    autoAddAllLanguagesOnAdd?: boolean;
+    validateBlankTranslationRows?: boolean;
+    autoAddAllLanguages?: boolean;
+    autoAddEnglishSubrow?: boolean;
 }
 
 export function OptionValuesGrid({
@@ -218,20 +275,91 @@ export function OptionValuesGrid({
     apiErrorRowIds,
     apiSuccessRowIds,
     singleLanguageMode,
+    hideRowAdvancedProperties,
+    autoExpandSubrowsOnAdd,
+    autoAddAllLanguagesOnAdd,
+    autoAddAllLanguages,
+    autoAddEnglishSubrow,
 }: OptionValuesGridProps): JSX.Element {
     const styles = useStyles();
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-    const [showingLanguagePicker, setShowingLanguagePicker] = useState<string | null>(null);
-    const [editingLanguageCode, setEditingLanguageCode] = useState<{ rowId: string; languageCode: number } | null>(null);
     const [draggingRowId, setDraggingRowId] = useState<string | null>(null);
     const [dragOverRowId, setDragOverRowId] = useState<string | null>(null);
     const [applyOrderPending, setApplyOrderPending] = useState(false);
+    const prevRowIdsRef = useRef<string[]>([]);
 
+    // Detect newly added rows and apply auto-expand / auto-add-languages.
+    // Also resets expanded state on full structural changes (load/reset).
     useEffect(() => {
-        setExpandedRows(new Set());
-        setShowingLanguagePicker(null);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rows.map((r) => r.rowId).join(",")]);
+        const currentIds = rows.map((r) => r.rowId);
+        const prevIds = prevRowIdsRef.current;
+
+        // Determine if this is a pure append (new rows only, no removals/reorder)
+        const isAppendOnly = currentIds.length > prevIds.length && prevIds.every((id) => currentIds.includes(id));
+        const newIds = isAppendOnly ? currentIds.filter((id) => !prevIds.includes(id)) : [];
+
+        prevRowIdsRef.current = currentIds;
+
+        if (!isAppendOnly) {
+            // Full load/reset: collapse all
+            setExpandedRows(new Set());
+            return;
+        }
+
+        if (newIds.length === 0) return;
+
+        const envCodes = availableLanguageCodes && availableLanguageCodes.length > 0 ? availableLanguageCodes : [];
+
+        if (autoExpandSubrowsOnAdd) {
+            // Add new rows to expanded set without touching existing
+            setExpandedRows((prev) => {
+                const next = new Set(prev);
+                newIds.forEach((id) => next.add(id));
+                return next;
+            });
+        }
+
+        if (autoAddAllLanguagesOnAdd && envCodes.length > 0) {
+            newIds.forEach((newId) => {
+                onUpdateRow(newId, (current) => {
+                    const existingCodes = new Set(current.labels.map((l) => l.languageCode));
+                    const toAdd = envCodes.filter((c) => c !== defaultLanguageCode && !existingCodes.has(c));
+                    if (toAdd.length === 0) return current;
+                    return {
+                        ...current,
+                        labels: [
+                            ...current.labels,
+                            ...toAdd.map((c) => ({ languageCode: c, label: "", description: "" })),
+                        ],
+                    };
+                });
+            });
+        }
+
+        if (autoAddEnglishSubrow && defaultLanguageCode !== 1033) {
+            newIds.forEach((newId) => {
+                onUpdateRow(newId, (current) => {
+                    if (current.labels.some((l) => l.languageCode === 1033)) return current;
+                    return {
+                        ...current,
+                        labels: [...current.labels, { languageCode: 1033, label: "", description: "" }],
+                    };
+                });
+            });
+        }
+    // onUpdateRow identity is stable from useCallback
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [rows.length, autoExpandSubrowsOnAdd, autoAddAllLanguagesOnAdd, autoAddEnglishSubrow, defaultLanguageCode]);
+
+    const allExpanded = rows.length > 0 && rows.every((r) => expandedRows.has(r.rowId));
+
+    const toggleExpandAll = (): void => {
+        if (allExpanded) {
+            setExpandedRows(new Set());
+        } else {
+            setExpandedRows(new Set(rows.map((r) => r.rowId)));
+        }
+    };
 
     // Intersection of user-selected languages and Dataverse-installed languages
     const effectiveVisibleCodes = availableLanguageCodes && availableLanguageCodes.length > 0 ? visibleLanguageCodes.filter((c) => availableLanguageCodes.includes(c)) : visibleLanguageCodes;
@@ -254,10 +382,27 @@ export function OptionValuesGrid({
     const toggleRowExpansion = (rowId: string): void => {
         setExpandedRows((prev) => {
             const next = new Set(prev);
-            if (next.has(rowId)) {
+            const isCurrentlyExpanded = next.has(rowId);
+            if (isCurrentlyExpanded) {
                 next.delete(rowId);
             } else {
                 next.add(rowId);
+                // Auto-add all env languages when expanding, if setting is on
+                if (autoAddAllLanguages && availableLanguageCodes && availableLanguageCodes.length > 0) {
+                    const envCodes = availableLanguageCodes;
+                    onUpdateRow(rowId, (current) => {
+                        const existingCodes = new Set(current.labels.map((l) => l.languageCode));
+                        const toAdd = envCodes.filter((c) => c !== defaultLanguageCode && !existingCodes.has(c));
+                        if (toAdd.length === 0) return current;
+                        return {
+                            ...current,
+                            labels: [
+                                ...current.labels,
+                                ...toAdd.map((c) => ({ languageCode: c, label: "", description: "" })),
+                            ],
+                        };
+                    });
+                }
             }
             return next;
         });
@@ -279,7 +424,6 @@ export function OptionValuesGrid({
                 labels,
             };
         });
-        setShowingLanguagePicker(null);
     };
 
     const handleRemoveLanguage = (rowId: string, languageCode: number): void => {
@@ -290,7 +434,6 @@ export function OptionValuesGrid({
                 labels,
             };
         });
-        setEditingLanguageCode((current) => (current?.rowId === rowId && current.languageCode === languageCode ? null : current));
     };
 
     const handleUpdateLanguageLabel = (rowId: string, languageCode: number, label: string): void => {
@@ -327,6 +470,17 @@ export function OptionValuesGrid({
         });
     };
 
+    const handleUpdateLanguageHidden = (rowId: string, languageCode: number, hidden: boolean): void => {
+        onUpdateRow(rowId, (current) => {
+            const labels = [...current.labels];
+            const targetIndex = labels.findIndex((entry) => entry.languageCode === languageCode);
+            if (targetIndex >= 0) {
+                labels[targetIndex] = { ...labels[targetIndex], hidden };
+            }
+            return { ...current, labels };
+        });
+    };
+
     if (rows.length === 0) {
         return (
             <section className={styles.panel}>
@@ -349,36 +503,50 @@ export function OptionValuesGrid({
                     Add Row
                 </Button>
                 {isLoaded && rows.length > 0 && onApplyOrder && (
-                    <Button
-                        appearance="secondary"
-                        size="small"
-                        onClick={() => {
-                            setApplyOrderPending(true);
-                            onApplyOrder()
-                                .catch((err: unknown) => console.error("[OptionValuesGrid] applyOrder failed:", err))
-                                .finally(() => setApplyOrderPending(false));
-                        }}
-                        disabled={applyOrderPending}
-                    >
-                        {applyOrderPending ? "Applying\u2026" : "Apply Order"}
-                    </Button>
+                    <Tooltip content="Reorder options in Dataverse to match your current table order" relationship="description">
+                        <Button
+                            appearance="secondary"
+                            size="small"
+                            onClick={() => {
+                                setApplyOrderPending(true);
+                                onApplyOrder()
+                                    .catch((err: unknown) => console.error("[OptionValuesGrid] applyOrder failed:", err))
+                                    .finally(() => setApplyOrderPending(false));
+                            }}
+                            disabled={applyOrderPending}
+                        >
+                            {applyOrderPending ? "Applying\u2026" : "Apply Order"}
+                        </Button>
+                    </Tooltip>
                 )}
             </div>
 
             <div className={styles.tableWrapper}>
-                <table className={styles.table}>
+                <table className={styles.table} aria-label="Option values">
                     <colgroup>
                         <col style={{ width: 42 }} />
                         <col style={{ width: 32 }} />
-                        <col style={{ width: "20%" }} />
+                        <col style={{ width: "25%" }} />
                         <col style={{ width: "15%" }} />
                         <col style={{ width: "auto" }} />
-                        <col style={{ width: 42 }} />
+                        <col style={{ width: 78 }} />
                     </colgroup>
                     <thead className={styles.tableHead}>
                         <tr>
                             <th className={mergeClasses(styles.th, styles.dragCell)} scope="col" />
-                            <th className={mergeClasses(styles.th, styles.chevronCell)} scope="col" />
+                            <th className={mergeClasses(styles.th, styles.chevronCell)} scope="col">
+                                {!singleLanguageMode && (
+                                    <Button
+                                        appearance="subtle"
+                                        size="small"
+                                        icon={allExpanded ? <ChevronDownRegular /> : <ChevronRightRegular />}
+                                        className={styles.chevronBtn}
+                                        onClick={toggleExpandAll}
+                                        aria-label={allExpanded ? "Collapse all rows" : "Expand all rows"}
+                                        title={allExpanded ? "Collapse all" : "Expand all"}
+                                    />
+                                )}
+                            </th>
                             <th className={mergeClasses(styles.th, styles.columnProps)} scope="col">
                                 Label
                             </th>
@@ -395,7 +563,8 @@ export function OptionValuesGrid({
                         {rows.map((row) => {
                             const isExpanded = expandedRows.has(row.rowId);
                             const otherLanguages = row.labels.filter((entry) => entry.languageCode !== defaultLanguageCode);
-                            const existingLanguageCodes = row.labels.map((entry) => entry.languageCode);
+                            // Always include defaultLanguageCode so it can never be added as a sub-row
+                            const existingLanguageCodes = [...new Set([defaultLanguageCode, ...row.labels.map((entry) => entry.languageCode)])];
 
                             return (
                                 <Fragment key={row.rowId}>
@@ -416,11 +585,12 @@ export function OptionValuesGrid({
                                         setDraggingRowId={setDraggingRowId}
                                         setDragOverRowId={setDragOverRowId}
                                         onReorderRows={onReorderRows}
+                                        hideAdvancedProperties={hideRowAdvancedProperties}
                                     />
 
                                     {hasValidated && validationIssues.filter((i) => i.rowId === row.rowId).length > 0 && (
                                         <tr key={`${row.rowId}-errors`}>
-                                            <td colSpan={5} className={styles.rowValidationMessages}>
+                                                <td colSpan={6} className={styles.rowValidationMessages}>
                                                 {validationIssues
                                                     .filter((i) => i.rowId === row.rowId)
                                                     .map((issue, i) => (
@@ -441,14 +611,14 @@ export function OptionValuesGrid({
                                                 row={row}
                                                 langEntry={langEntry}
                                                 styles={styles}
-                                                editingLanguageCode={editingLanguageCode}
-                                                setEditingLanguageCode={setEditingLanguageCode}
                                                 existingLanguageCodes={existingLanguageCodes}
+                                                availableLanguageCodes={effectiveVisibleCodes}
                                                 sortLanguagesByCode={sortLanguagesByCode}
                                                 hasLanguageRowError={hasLanguageRowError}
                                                 onUpdateRow={onUpdateRow}
                                                 onUpdateLanguageLabel={handleUpdateLanguageLabel}
                                                 onUpdateLanguageDescription={handleUpdateLanguageDescription}
+                                                onUpdateLanguageHidden={handleUpdateLanguageHidden}
                                                 onRemoveLanguage={handleRemoveLanguage}
                                             />
                                         ))}
@@ -457,9 +627,7 @@ export function OptionValuesGrid({
                                         <LanguagePickerRow
                                             rowId={row.rowId}
                                             styles={styles}
-                                            showingLanguagePicker={showingLanguagePicker}
-                                            setShowingLanguagePicker={setShowingLanguagePicker}
-                                            effectiveVisibleCodes={effectiveVisibleCodes}
+                                            availableLanguageCodes={effectiveVisibleCodes}
                                             existingLanguageCodes={existingLanguageCodes}
                                             onAddLanguage={handleAddLanguage}
                                             sortLanguagesByCode={sortLanguagesByCode}

@@ -16,6 +16,12 @@ interface BuilderTabProps {
     apiErrorRowIds?: ReadonlySet<string>;
     apiSuccessRowIds?: ReadonlySet<string>;
     singleLanguageMode?: boolean;
+    hideRowAdvancedProperties?: boolean;
+    autoExpandSubrowsOnAdd?: boolean;
+    autoAddAllLanguagesOnAdd?: boolean;
+    validateBlankTranslationRows?: boolean;
+    autoAddAllLanguages?: boolean;
+    autoAddEnglishSubrow?: boolean;
 }
 
 export function BuilderTab({
@@ -33,6 +39,12 @@ export function BuilderTab({
     apiErrorRowIds,
     apiSuccessRowIds,
     singleLanguageMode,
+    hideRowAdvancedProperties,
+    autoExpandSubrowsOnAdd,
+    autoAddAllLanguagesOnAdd,
+    validateBlankTranslationRows,
+    autoAddAllLanguages,
+    autoAddEnglishSubrow,
 }: BuilderTabProps): JSX.Element {
     const isLoaded = draft.operation === "update";
 
@@ -54,6 +66,12 @@ export function BuilderTab({
             apiErrorRowIds={apiErrorRowIds}
             apiSuccessRowIds={apiSuccessRowIds}
             singleLanguageMode={singleLanguageMode}
+            hideRowAdvancedProperties={hideRowAdvancedProperties}
+            autoExpandSubrowsOnAdd={autoExpandSubrowsOnAdd}
+            autoAddAllLanguagesOnAdd={autoAddAllLanguagesOnAdd}
+            validateBlankTranslationRows={validateBlankTranslationRows}
+            autoAddAllLanguages={autoAddAllLanguages}
+            autoAddEnglishSubrow={autoAddEnglishSubrow}
         />
     );
 }

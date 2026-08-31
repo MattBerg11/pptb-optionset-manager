@@ -5,10 +5,11 @@ export function useRowExpansion<RowType extends { rowId: string }>(rows: RowType
     toggleRowExpansion: (rowId: string) => void;
 } {
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+    const rowIds = rows.map((row) => row.rowId).join(",");
 
     useEffect(() => {
         setExpandedRows(new Set());
-    }, [rows.map((row) => row.rowId).join(",")]);
+    }, [rowIds] );
 
     const toggleRowExpansion = (rowId: string): void => {
         setExpandedRows((previous) => {

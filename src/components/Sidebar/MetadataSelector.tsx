@@ -5,7 +5,28 @@
  * Local scope:  Publisher → Solution → Entity (table) → Choice Column
  */
 
-import { Button, Combobox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Divider, Dropdown, InfoLabel, makeStyles, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Option, Spinner, tokens } from "@fluentui/react-components";
+import {
+    Button,
+    Combobox,
+    Dialog,
+    DialogActions,
+    DialogBody,
+    DialogContent,
+    DialogSurface,
+    DialogTitle,
+    Divider,
+    Dropdown,
+    InfoLabel,
+    makeStyles,
+    Menu,
+    MenuItem,
+    MenuList,
+    MenuPopover,
+    MenuTrigger,
+    Option,
+    Spinner,
+    tokens,
+} from "@fluentui/react-components";
 import { ArrowSyncRegular, DismissRegular, FilterRegular } from "@fluentui/react-icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChoiceAttribute, DataverseMetadataService, Entity, Publisher, Solution } from "../../api/dataverseMetadata";
@@ -90,6 +111,7 @@ interface MetadataSelectorProps {
     metadataService: DataverseMetadataService;
     scope: OptionSetScope;
     showSystemOptionSets: boolean;
+    onShowSystemOptionSetsChange: (value: boolean) => void;
     selection: MetadataSelection;
     onSelectionChange: (partial: Partial<MetadataSelection>) => void;
     onGlobalOptionSetLoaded?: (detail: GlobalOptionSetDetail) => void;
@@ -104,6 +126,7 @@ export function MetadataSelector({
     metadataService,
     scope,
     showSystemOptionSets,
+    onShowSystemOptionSetsChange,
     selection,
     onSelectionChange,
     onGlobalOptionSetLoaded,
@@ -151,7 +174,14 @@ export function MetadataSelector({
             setErrors([]);
             activityRef.current?.("Retrieved publishers", "success");
         } catch (err) {
-            setErrors((prev) => [...prev, err instanceof Error ? err.message : "Failed to load publishers"]);
+            const msg = err instanceof Error ? err.message : "Failed to load publishers";
+            setErrors((prev) => [...prev, msg]);
+            window.toolboxAPI?.utils?.showNotification?.({
+                title: "Failed to load publishers",
+                body: msg,
+                type: "error",
+                duration: 5000,
+            });
         } finally {
             setLoading("publishers", false);
         }
@@ -483,12 +513,15 @@ export function MetadataSelector({
                 </div>
             )}
 
-            <Dialog open={confirmGlobalOptionSetChangeOpen} onOpenChange={(_, data) => {
-                setConfirmGlobalOptionSetChangeOpen(data.open);
-                if (!data.open) {
-                    setPendingGlobalOptionSetName(null);
-                }
-            }}>
+            <Dialog
+                open={confirmGlobalOptionSetChangeOpen}
+                onOpenChange={(_, data) => {
+                    setConfirmGlobalOptionSetChangeOpen(data.open);
+                    if (!data.open) {
+                        setPendingGlobalOptionSetName(null);
+                    }
+                }}
+            >
                 <DialogSurface style={{ width: "min(28rem, calc(100vw - 2rem))" }}>
                     <DialogBody>
                         <DialogTitle>Reload option set?</DialogTitle>
@@ -499,10 +532,13 @@ export function MetadataSelector({
                             <Button appearance="primary" onClick={confirmGlobalOptionSetChange}>
                                 Reload
                             </Button>
-                            <Button appearance="secondary" onClick={() => {
-                                setConfirmGlobalOptionSetChangeOpen(false);
-                                setPendingGlobalOptionSetName(null);
-                            }}>
+                            <Button
+                                appearance="secondary"
+                                onClick={() => {
+                                    setConfirmGlobalOptionSetChangeOpen(false);
+                                    setPendingGlobalOptionSetName(null);
+                                }}
+                            >
                                 Cancel
                             </Button>
                         </DialogActions>
@@ -536,6 +572,8 @@ export function MetadataSelector({
                             selectedOptions={selection.publisherId ? [selection.publisherId] : []}
                             onOptionSelect={handlePublisherChange}
                             disabled={isLoading("publishers")}
+                            aria-label="Publisher"
+                            aria-busy={isLoading("publishers")}
                             size="small"
                         >
                             {publishers.map((p) => (
@@ -549,7 +587,10 @@ export function MetadataSelector({
                     {/* Solution */}
                     {selection.publisherId && (
                         <div className={styles.field}>
-                            <InfoLabel size="medium" info="Dataverse requires every global Choice to belong to a solution for change tracking and ALM. Without a solution, the option set cannot be published or transported between environments.">
+                            <InfoLabel
+                                size="medium"
+                                info="Dataverse requires every global Choice to belong to a solution for change tracking and ALM. Without a solution, the option set cannot be published or transported between environments."
+                            >
                                 Solution {!selection.selectedGlobalOptionSetName && "*"} {isLoading("solutions") ? <Spinner size="tiny" /> : null}
                             </InfoLabel>
                             <Dropdown
@@ -560,6 +601,8 @@ export function MetadataSelector({
                                 selectedOptions={selection.solutionId ? [selection.solutionId] : []}
                                 onOptionSelect={handleSolutionChange}
                                 disabled={isLoading("solutions") || !selection.publisherId}
+                                aria-label="Solution"
+                                aria-busy={isLoading("solutions")}
                                 size="small"
                             >
                                 {solutions.map((s) => (
@@ -579,6 +622,8 @@ export function MetadataSelector({
                             <div className={styles.fieldRow}>
                                 <Combobox
                                     className={styles.fieldInput}
+                                    aria-label="Search or select a global option set"
+                                    aria-busy={isLoading("globalOptionSets") || isLoading("optionSetDetail")}
                                     listbox={{ style: wideListboxStyle }}
                                     placeholder="Search or select an option set…"
                                     value={selectedOptionSetDisplay || optionSetFilter}
@@ -618,7 +663,7 @@ export function MetadataSelector({
                                     <MenuTrigger disableButtonEnhancement>
                                         <Button
                                             icon={<FilterRegular />}
-                                            appearance={filterMode !== "none" ? "primary" : "subtle"}
+                                            appearance={filterMode !== "none" || !showSystemOptionSets ? "primary" : "subtle"}
                                             size="small"
                                             title="Filter options"
                                             aria-label="Filter options"
@@ -626,26 +671,24 @@ export function MetadataSelector({
                                     </MenuTrigger>
                                     <MenuPopover>
                                         <MenuList>
-                                            <MenuItem onClick={() => setFilterMode("none")}>
-                                                No filter{filterMode === "none" && " ✓"}
+                                            <MenuItem onClick={() => setFilterMode("none")} title="Show all option sets without name filtering">
+                                                No filter{filterMode === "none" && " \u2713"}
                                             </MenuItem>
-                                            <MenuItem
-                                                onClick={() => setFilterMode("publisher")}
-                                                disabled={!selection.publisherPrefix}
-                                            >
-                                                Filter by publisher{filterMode === "publisher" && " ✓"}
+                                            <MenuItem onClick={() => setFilterMode("publisher")} disabled={!selection.publisherPrefix} title="Show only option sets owned by the selected publisher">
+                                                Filter by publisher{filterMode === "publisher" && " \u2713"}
                                             </MenuItem>
-                                            <MenuItem
-                                                onClick={() => setFilterMode("solution")}
-                                                disabled={!selection.solutionUniqueName}
-                                            >
-                                                Filter by solution{filterMode === "solution" && " ✓"}
+                                            <MenuItem onClick={() => setFilterMode("solution")} disabled={!selection.solutionUniqueName} title="Show only option sets in the selected solution">
+                                                Filter by solution{filterMode === "solution" && " \u2713"}
                                             </MenuItem>
                                             <MenuItem
                                                 onClick={() => setFilterMode("both")}
                                                 disabled={!selection.publisherPrefix || !selection.solutionUniqueName}
+                                                title="Show only option sets matching both the publisher and solution"
                                             >
-                                                Filter by both{filterMode === "both" && " ✓"}
+                                                Filter by both{filterMode === "both" && " \u2713"}
+                                            </MenuItem>
+                                            <MenuItem onClick={() => onShowSystemOptionSetsChange(!showSystemOptionSets)} title="Hide built-in system option sets; show only custom ones">
+                                                Hide system option sets{!showSystemOptionSets && " \u2713"}
                                             </MenuItem>
                                         </MenuList>
                                     </MenuPopover>
@@ -659,7 +702,9 @@ export function MetadataSelector({
                 <>
                     <div className={styles.field}>
                         <div className={styles.labelRow}>
-                            <InfoLabel size="medium" info="The publisher that owns the table and field you want to modify.">Publisher {isLoading("publishers") ? <Spinner size="tiny" /> : null}</InfoLabel>
+                            <InfoLabel size="medium" info="The publisher that owns the table and field you want to modify.">
+                                Publisher {isLoading("publishers") ? <Spinner size="tiny" /> : null}
+                            </InfoLabel>
                             <Button size="small" appearance="subtle" icon={<ArrowSyncRegular />} onClick={handleRefresh} title="Refresh metadata" aria-label="Refresh metadata" />
                         </div>
                         <Dropdown
@@ -681,7 +726,9 @@ export function MetadataSelector({
                     </div>
 
                     <div className={styles.field}>
-                        <InfoLabel size="medium" info="The solution that contains the table you want to modify.">Solution {isLoading("solutions") ? <Spinner size="tiny" /> : null}</InfoLabel>
+                        <InfoLabel size="medium" info="The solution that contains the table you want to modify.">
+                            Solution {isLoading("solutions") ? <Spinner size="tiny" /> : null}
+                        </InfoLabel>
                         <Dropdown
                             className={styles.fieldControl}
                             listbox={{ style: narrowListboxStyle }}
@@ -701,7 +748,9 @@ export function MetadataSelector({
                     </div>
 
                     <div className={styles.field}>
-                        <InfoLabel size="medium" info="The table (entity) that contains the choice field you want to edit.">Entity {isLoading("entities") ? <Spinner size="tiny" /> : null}</InfoLabel>
+                        <InfoLabel size="medium" info="The table (entity) that contains the choice field you want to edit.">
+                            Entity {isLoading("entities") ? <Spinner size="tiny" /> : null}
+                        </InfoLabel>
                         {!selection.solutionId && !loadAllEntitiesClicked && !isLoading("entities") && entities.length === 0 && (
                             <Button appearance="secondary" size="small" onClick={() => void loadAllEntities()}>
                                 Load all entities

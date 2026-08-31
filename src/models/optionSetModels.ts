@@ -5,12 +5,15 @@ export interface LanguageEntry {
     languageCode: number;
     label: string;
     description?: string;
+    hidden?: boolean;
 }
 
 export interface OptionDraftRow {
     rowId: string;
     optionValue?: number;
     externalKey?: string;
+    hidden?: boolean;
+    color?: string;
     labels: LanguageEntry[];
 }
 

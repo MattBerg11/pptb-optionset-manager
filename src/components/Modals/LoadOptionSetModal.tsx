@@ -145,7 +145,7 @@ export function LoadOptionSetModal({ isOpen, scope, metadataService, publisherPr
         return () => {
             isCancelled = true;
         };
-    }, [isOpen, scope, metadataService, publisherPrefix,optionValuePrefix]);
+    }, [isOpen, scope, metadataService, publisherPrefix, optionValuePrefix]);
 
     const handleLoadClick = async (): Promise<void> => {
         if (!selectedName) {

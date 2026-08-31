@@ -96,7 +96,11 @@ export function ActivityLog({ entries, isExpanded, onToggle }: ActivityLogProps)
                     ) : (
                         entries.map((entry) => (
                             <div key={entry.id} className={styles.entry}>
-                                <span className={mergeClasses(styles.dot, entry.type === "success" ? styles.dotSuccess : entry.type === "error" ? styles.dotError : styles.dotInfo)} />
+                                <span
+                                    className={mergeClasses(styles.dot, entry.type === "success" ? styles.dotSuccess : entry.type === "error" ? styles.dotError : styles.dotInfo)}
+                                    aria-label={entry.type}
+                                    role="img"
+                                />
                                 <span className={styles.entryMessage}>{entry.message}</span>
                                 <span className={styles.timestamp}>{entry.timestamp.toLocaleTimeString()}</span>
                             </div>

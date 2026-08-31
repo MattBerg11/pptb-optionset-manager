@@ -2,6 +2,7 @@ export { ConfirmDialog } from "./ConfirmDialog";
 export { EmptyState } from "./EmptyState";
 export { ErrorBoundary } from "./ErrorBoundary";
 export { LanguageCodeDropdown } from "./LanguageCodeDropdown";
+export { LanguageMenu } from "./LanguageCodeDropdown";
 export { LanguageFlag } from "../languages/LanguageFlag";
 export { MetadataDropdown } from "./MetadataDropdown";
 export { StatusBanner } from "./StatusBanner";

@@ -27,10 +27,18 @@ function isOptionValue(value: number): boolean {
   return Number.isInteger(value) && value >= MIN_OPTION_VALUE && value <= MAX_OPTION_VALUE;
 }
 
+// Dataverse API hard limits for metadata strings
+const MAX_LABEL_LENGTH = 100;
+const MAX_DESCRIPTION_LENGTH = 255;
+const MAX_SCHEMA_NAME_LENGTH = 100;
+const MAX_DISPLAY_NAME_LENGTH = 100;
+
 export function validateOptionSetDraft(
   draft: OptionSetDraft,
   availableLanguageCodes?: number[],
+  options?: { validateBlankTranslationRows?: boolean },
 ): ValidationIssue[] {
+  const validateBlanks = options?.validateBlankTranslationRows ?? true;
   const issues: ValidationIssue[] = [];
 
   if (!draft.optionSetSchemaName.trim()) {
@@ -48,6 +56,22 @@ export function validateOptionSetDraft(
       severity: "error",
       message: "Display name is required.",
       fieldPath: "displayName",
+    });
+  } else if (draft.displayName.length > MAX_DISPLAY_NAME_LENGTH) {
+    issues.push({
+      code: "DISPLAY_NAME_TOO_LONG",
+      severity: "error",
+      message: `Display name must be ${MAX_DISPLAY_NAME_LENGTH} characters or fewer (currently ${draft.displayName.length}).`,
+      fieldPath: "displayName",
+    });
+  }
+
+  if (draft.optionSetSchemaName.trim().length > MAX_SCHEMA_NAME_LENGTH) {
+    issues.push({
+      code: "SCHEMA_NAME_TOO_LONG",
+      severity: "error",
+      message: `Schema name must be ${MAX_SCHEMA_NAME_LENGTH} characters or fewer (currently ${draft.optionSetSchemaName.trim().length}).`,
+      fieldPath: "optionSetSchemaName",
     });
   }
 
@@ -187,13 +211,31 @@ export function validateOptionSetDraft(
 
     const languageSet = new Set<number>();
     row.labels.forEach((label, labelIndex) => {
-      if (!label.label.trim()) {
+      if (validateBlanks && !label.label.trim()) {
         issues.push({
           code: "EMPTY_LABEL",
           severity: "error",
           message: "Label text cannot be empty.",
           rowId,
           fieldPath: `rows.${index}.labels.${labelIndex}.label`,
+        });
+      } else if (label.label.length > MAX_LABEL_LENGTH) {
+        issues.push({
+          code: "LABEL_TOO_LONG",
+          severity: "error",
+          message: `Label must be ${MAX_LABEL_LENGTH} characters or fewer (currently ${label.label.length}).`,
+          rowId,
+          fieldPath: `rows.${index}.labels.${labelIndex}.label`,
+        });
+      }
+
+      if (label.description && label.description.length > MAX_DESCRIPTION_LENGTH) {
+        issues.push({
+          code: "DESCRIPTION_TOO_LONG",
+          severity: "warning",
+          message: `Description must be ${MAX_DESCRIPTION_LENGTH} characters or fewer (currently ${label.description.length}).`,
+          rowId,
+          fieldPath: `rows.${index}.labels.${labelIndex}.description`,
         });
       }
 

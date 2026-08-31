@@ -1,4 +1,4 @@
-import { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, InfoLabel, Input, Label, Spinner, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, InfoLabel, Input, Label, Spinner, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { PlugDisconnectedRegular } from "@fluentui/react-icons";
 import type ToolBoxAPI from "@pptb/types/toolboxAPI";
 import { useState } from "react";
@@ -153,6 +153,9 @@ export interface SidebarPanelProps {
     activityLogExpanded: boolean;
     onActivityLogToggle: () => void;
 
+    // Sidebar-level setting callbacks
+    onToggleShowSystemOptionSets: (value: boolean) => void;
+
     // Validation state
     hasValidated: boolean;
     schemaNameManuallyEdited: boolean;
@@ -193,6 +196,7 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
         activityEntries,
         activityLogExpanded,
         onActivityLogToggle,
+        onToggleShowSystemOptionSets,
         getFieldError,
         onSetField,
         onUpdateMetadataSelection,
@@ -286,13 +290,17 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
 
                         <div className={styles.actionRow}>
                             {isFormDirty && (
-                                <Button appearance="secondary" size="small" onClick={resetProperties}>
-                                    Reset
-                                </Button>
+                                <Tooltip content="Discard unsaved changes and reset the entire form" relationship="description">
+                                    <Button appearance="secondary" size="small" onClick={resetProperties}>
+                                        Reset
+                                    </Button>
+                                </Tooltip>
                             )}
-                            <Button appearance="primary" size="small" className={styles.newButton} onClick={handleNew}>
-                                New
-                            </Button>
+                            <Tooltip content="Start a new blank option set" relationship="description">
+                                <Button appearance="primary" size="small" className={styles.newButton} onClick={handleNew}>
+                                    New
+                                </Button>
+                            </Tooltip>
                         </div>
                     </div>
 
@@ -303,6 +311,7 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
                                 metadataService={metadataService}
                                 scope={draft.scope}
                                 showSystemOptionSets={showSystemOptionSets}
+                                onShowSystemOptionSetsChange={onToggleShowSystemOptionSets}
                                 selection={metadataSelection}
                                 onSelectionChange={onUpdateMetadataSelection}
                                 onGlobalOptionSetLoaded={onGlobalOptionSetLoaded}
@@ -347,8 +356,10 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
                                         value={draft.displayName}
                                         onChange={(_, data) => onDisplayNameChange(data.value)}
                                         placeholder="My Option Set"
+                                        aria-invalid={!!getFieldError("displayName")}
+                                        aria-describedby={getFieldError("displayName") ? "err-displayName" : undefined}
                                     />
-                                    {getFieldError("displayName") && <span className={styles.metadataFieldError}>{getFieldError("displayName")}</span>}
+                                    {getFieldError("displayName") && <span id="err-displayName" className={styles.metadataFieldError} role="alert">{getFieldError("displayName")}</span>}
                                 </div>
                                 <div className={styles.metadataField}>
                                     <InfoLabel
@@ -367,9 +378,11 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
                                         placeholder="prefix_MyOptionSet"
                                         readOnly={draft.operation === "update"}
                                         disabled={draft.operation === "update"}
+                                        aria-invalid={draft.operation !== "update" && !!getFieldError("optionSetSchemaName")}
+                                        aria-describedby={draft.operation !== "update" && getFieldError("optionSetSchemaName") ? "err-schemaName" : undefined}
                                     />
                                     {draft.operation === "update" && <span className={styles.metadataFieldHint}>Schema name is read-only after creation</span>}
-                                    {draft.operation !== "update" && getFieldError("optionSetSchemaName") && <span className={styles.metadataFieldError}>{getFieldError("optionSetSchemaName")}</span>}
+                                    {draft.operation !== "update" && getFieldError("optionSetSchemaName") && <span id="err-schemaName" className={styles.metadataFieldError} role="alert">{getFieldError("optionSetSchemaName")}</span>}
                                 </div>
                                 <div className={styles.metadataField}>
                                     <InfoLabel htmlFor="sidebar-description" size="small" info="Optional documentation text describing this option set's purpose.">

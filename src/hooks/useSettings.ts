@@ -29,8 +29,15 @@ export function useSettings(): UseSettingsResult {
             const stored = (await window.toolboxAPI.settings.get(SETTINGS_KEY)) as OptionSetManagerSettings | null;
             setSettings(stored ? { ...DEFAULT_SETTINGS, ...stored } : DEFAULT_SETTINGS);
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to load settings");
+            const message = err instanceof Error ? err.message : "Failed to load settings";
+            setError(message);
             setSettings(DEFAULT_SETTINGS);
+            window.toolboxAPI?.utils?.showNotification?.({
+                title: "Settings unavailable",
+                body: "Could not load saved settings; using defaults.",
+                type: "warning",
+                duration: 5000,
+            });
         } finally {
             setIsLoading(false);
         }
@@ -51,6 +58,12 @@ export function useSettings(): UseSettingsResult {
             } catch (err) {
                 const message = err instanceof Error ? err.message : "Failed to save settings";
                 setError(message);
+                window.toolboxAPI?.utils?.showNotification?.({
+                    title: "Settings not saved",
+                    body: message,
+                    type: "error",
+                    duration: 5000,
+                });
                 throw new Error(message, { cause: err });
             }
         },
@@ -65,6 +78,12 @@ export function useSettings(): UseSettingsResult {
         } catch (err) {
             const message = err instanceof Error ? err.message : "Failed to reset settings";
             setError(message);
+            window.toolboxAPI?.utils?.showNotification?.({
+                title: "Settings reset failed",
+                body: message,
+                type: "error",
+                duration: 5000,
+            });
             throw new Error(message, { cause: err });
         }
     }, []);

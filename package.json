@@ -1,30 +1,41 @@
 {
     "name": "pptb-optionset-manager",
-    "version": "0.3.7",
+    "version": "0.3.8",
     "type": "module",
     "displayName": "OptionSet Manager",
     "description": "Create, modify, and manage local and global Dataverse OptionSets (Choice fields) with bulk operations, import/export, and multi-language support.",
     "main": "index.html",
     "icon": "assets/icon.svg",
     "license": "MIT",
-    "author": "Matt Berg",
     "contributors": [
         {
             "name": "Matt Berg",
             "url": "https://github.com/mattberg11"
         }
     ],
-    "bugs": {
-        "url": "https://github.com/mattberg11/pptb-optionset-manager/issues"
-    },
     "configurations": {
         "website": "https://github.com/mattberg11/pptb-optionset-manager",
         "repository": "https://github.com/mattberg11/pptb-optionset-manager",
         "readmeUrl": "https://raw.githubusercontent.com/mattberg11/pptb-optionset-manager/refs/heads/main/README.md"
     },
+    "bugs": {
+        "url": "https://github.com/mattberg11/pptb-optionset-manager/issues"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/mattberg11/pptb-optionset-manager.git"
+    },
     "engines": {
         "node": ">=18.0.0"
     },
+    "keywords": [
+        "dataverse",
+        "power-platform",
+        "optionset",
+        "choice",
+        "metadata",
+        "localization"
+    ],
     "scripts": {
         "build": "tsc && vite build",
         "dev": "vite",

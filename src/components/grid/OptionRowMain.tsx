@@ -1,7 +1,9 @@
 import { Button, Input, mergeClasses } from "@fluentui/react-components";
 import { ChevronDownRegular, ChevronRightRegular, DeleteRegular, ReOrderDotsVerticalRegular } from "@fluentui/react-icons";
+import { useRef } from "react";
 import { MAX_OPTION_VALUE, MIN_OPTION_VALUE } from "../../constants";
 import type { OptionDraftRow } from "../../models/optionSetModels";
+import { OptionMetadataPopover } from "./OptionMetadataPopover";
 
 interface OptionRowMainProps {
     row: OptionDraftRow;
@@ -20,6 +22,7 @@ interface OptionRowMainProps {
     setDraggingRowId: (value: string | null) => void;
     setDragOverRowId: (value: string | null) => void;
     onReorderRows: (fromIndex: number, toIndex: number) => void;
+    hideAdvancedProperties?: boolean;
 }
 
 export function OptionRowMain({
@@ -39,8 +42,11 @@ export function OptionRowMain({
     setDraggingRowId,
     setDragOverRowId,
     onReorderRows,
+    hideAdvancedProperties,
 }: OptionRowMainProps): JSX.Element {
     const defaultLabel = row.labels.find((entry) => entry.languageCode === defaultLanguageCode) ?? row.labels[0];
+    const colorInputRef = useRef<HTMLInputElement>(null);
+    const showDelete = rows.length > 1;
 
     return (
         <tr
@@ -52,6 +58,7 @@ export function OptionRowMain({
             )}
             tabIndex={0}
             draggable={true}
+            aria-label={`Option row: ${defaultLabel?.label || "Unnamed"}, value ${row.optionValue ?? "not set"}`}
             onKeyDown={(event) => {
                 const index = rows.indexOf(row);
                 if (event.altKey && event.key === "ArrowUp" && index > 0) {
@@ -90,7 +97,11 @@ export function OptionRowMain({
         >
             {/* Reorder handle cell */}
             <td className={mergeClasses(styles.td, styles.dragCell)}>
-                <button className={styles.dragHandle} aria-label="Drag to reorder, or use Alt+Up/Down">
+                <button
+                    className={styles.dragHandle}
+                    aria-roledescription="reorder handle"
+                    aria-label={`Reorder "${defaultLabel?.label || "option"}"; drag or use Alt+Up/Down`}
+                >
                     <ReOrderDotsVerticalRegular />
                 </button>
             </td>
@@ -111,12 +122,34 @@ export function OptionRowMain({
             {/* label cell */}
             <td className={mergeClasses(styles.td, styles.labelColumn)}>
                 <div className={styles.labelCell}>
+                    {/* Color swatch */}
+                    <button
+                        className={styles.colorSwatch}
+                        style={{ backgroundColor: row.color ?? undefined }}
+                        onClick={() => colorInputRef.current?.click()}
+                        title={row.color ? `Row color: ${row.color}. Click to change` : "Set row color"}
+                        aria-label={row.color ? `Row color: ${row.color}. Click to change` : "Set row color"}
+                        type="button"
+                    />
+                    <input
+                        ref={colorInputRef}
+                        type="color"
+                        value={row.color ?? ""}
+                        onChange={(event) => {
+                            const color = (event.target as HTMLInputElement).value;
+                            onUpdateRow(row.rowId, (current) => ({ ...current, color }));
+                        }}
+                        className={styles.colorInput}
+                        aria-hidden="true"
+                        tabIndex={-1}
+                    />
                     <Input
                         type="text"
                         size="small"
                         value={defaultLabel?.label ?? ""}
                         className={styles.inputFlex}
                         style={{ width: "100%" }}
+                        aria-label="Label"
                         onChange={(event) => {
                             onUpdateRow(row.rowId, (current) => {
                                 const labels = [...current.labels];
@@ -151,8 +184,9 @@ export function OptionRowMain({
                     max={MAX_OPTION_VALUE}
                     step={0}
                     value={row.optionValue?.toString() ?? ""}
-                    className={styles.inputFlex}
+                    className={mergeClasses(styles.inputFlex, styles.numberInput)}
                     style={{ width: "100%" }}
+                    aria-label="Numeric value"
                     onChange={(event) => {
                         const value = (event.target as HTMLInputElement).value;
                         const parsed = value ? Number(value) : undefined;
@@ -171,6 +205,7 @@ export function OptionRowMain({
                     value={defaultLabel?.description ?? ""}
                     className={styles.inputFlex}
                     style={{ width: "100%" }}
+                    aria-label="Description"
                     onChange={(event) => {
                         onUpdateRow(row.rowId, (current) => {
                             const labels = [...current.labels];
@@ -195,8 +230,19 @@ export function OptionRowMain({
                     }}
                 />
             </td>
-            <td className={mergeClasses(styles.td, styles.actionCell)}>
-                {rows.length > 1 && <Button appearance="subtle" size="small" icon={<DeleteRegular />} onClick={() => onRemoveRow(row.rowId)} title="Remove row" aria-label="Remove row" />}
+            <td className={mergeClasses(styles.td, showDelete ? styles.actionCell : styles.actionCellSingle)}>
+                <div className={styles.actionButtons}>
+                    {!hideAdvancedProperties && (
+                        <OptionMetadataPopover
+                            styles={styles}
+                            externalKey={row.externalKey}
+                            hidden={row.hidden}
+                            onExternalKeyChange={(value) => onUpdateRow(row.rowId, (current) => ({ ...current, externalKey: value }))}
+                            onHiddenChange={(value) => onUpdateRow(row.rowId, (current) => ({ ...current, hidden: value }))}
+                        />
+                    )}
+                    {showDelete && <Button appearance="subtle" size="small" icon={<DeleteRegular />} onClick={() => onRemoveRow(row.rowId)} title="Remove row" aria-label="Remove row" />}
+                </div>
             </td>
         </tr>
     );

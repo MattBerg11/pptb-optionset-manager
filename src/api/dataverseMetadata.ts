@@ -184,12 +184,12 @@ export class DataverseMetadataService {
         const cacheKey = "publishers";
         const cached = this.cache.get<Publisher[]>(cacheKey);
         if (cached) {
-            if (DEBUG) console.log(`[DataverseMetadata] Loaded ${cached.length} publishers from cache`);
+            if (DEBUG) console.log(`[OptionSetManager] Loaded ${cached.length} publishers from cache`);
             return cached;
         }
 
         return this.deduplicator.deduplicate(cacheKey, async () => {
-            if (DEBUG) console.log("[DataverseMetadata] Loading publishers...");
+            if (DEBUG) console.log("[OptionSetManager] Loading publishers...");
             const fetchXml = `
                 <fetch>
                     <entity name="publisher">
@@ -197,7 +197,6 @@ export class DataverseMetadataService {
                         <attribute name="uniquename" />
                         <attribute name="friendlyname" />
                         <attribute name="customizationprefix" />
-                        <attribute name="optionValueprefix" />
                         <attribute name="isreadonly" />
                         <filter>
                             <condition attribute="isreadonly" operator="eq" value="false" />
@@ -222,18 +221,25 @@ export class DataverseMetadataService {
 
                     return !isBuiltInPublisher && entity.isreadonly !== "true";
                 })
-                .map((entity: Record<string, unknown>) => ({
-                    publisherId: entity.publisherid as string,
-                    uniqueName: entity.uniquename as string,
-                    friendlyName: entity.friendlyname as string,
-                    customizationPrefix: entity.customizationprefix as string,
-                    optionValuePrefix: typeof entity.optionValueprefix === "number"
-                        ? entity.optionValueprefix
-                        : parseInt(String(entity.optionValueprefix ?? "98922"), 10),
-                    isReadonly: entity.isreadonly === "true",
-                }));
+                .map((entity: Record<string, unknown>) => {
+                    const rawOptionValuePrefix = entity.optionValueprefix;
+                    const parsedOptionValuePrefix = typeof rawOptionValuePrefix === "number"
+                        ? rawOptionValuePrefix
+                        : Number.parseInt(String(rawOptionValuePrefix ?? "98922"), 10);
 
-            if (DEBUG) console.log(`[DataverseMetadata] Loaded ${publishers.length} publishers`);
+                    return {
+                        publisherId: entity.publisherid as string,
+                        uniqueName: entity.uniquename as string,
+                        friendlyName: entity.friendlyname as string,
+                        customizationPrefix: entity.customizationprefix as string,
+                        optionValuePrefix: Number.isFinite(parsedOptionValuePrefix) && parsedOptionValuePrefix > 0
+                            ? parsedOptionValuePrefix
+                            : 98922,
+                        isReadonly: entity.isreadonly === "true",
+                    };
+                });
+
+            if (DEBUG) console.log(`[OptionSetManager] Loaded ${publishers.length} publishers`);
             this.cache.set(cacheKey, publishers);
             return publishers;
         });
@@ -246,12 +252,12 @@ export class DataverseMetadataService {
         const cacheKey = publisherId ? `solutions:${publisherId}` : "solutions:all";
         const cached = this.cache.get<Solution[]>(cacheKey);
         if (cached) {
-            if (DEBUG) console.log(`[DataverseMetadata] Loaded ${cached.length} solutions from cache`);
+            if (DEBUG) console.log(`[OptionSetManager] Loaded ${cached.length} solutions from cache`);
             return cached;
         }
 
         return this.deduplicator.deduplicate(cacheKey, async () => {
-            if (DEBUG) console.log(`[DataverseMetadata] Loading solutions${publisherId ? ` for publisher: ${publisherId}` : ""}`);
+            if (DEBUG) console.log(`[OptionSetManager] Loading solutions${publisherId ? ` for publisher: ${publisherId}` : ""}`);
             const publisherFilter = publisherId ? `<condition attribute="publisherid" operator="eq" value="${xmlEscape(publisherId)}" />` : "";
 
             const fetchXml = `
@@ -283,7 +289,7 @@ export class DataverseMetadataService {
                 isManaged: entity.ismanaged === "true",
             }));
 
-            if (DEBUG) console.log(`[DataverseMetadata] Loaded ${solutions.length} solutions`);
+            if (DEBUG) console.log(`[OptionSetManager] Loaded ${solutions.length} solutions`);
             this.cache.set(cacheKey, solutions);
             return solutions;
         });
@@ -296,12 +302,12 @@ export class DataverseMetadataService {
         const cacheKey = `entities:${solutionUniqueName}`;
         const cached = this.cache.get<Entity[]>(cacheKey);
         if (cached) {
-            if (DEBUG) console.log(`[DataverseMetadata] Loaded ${cached.length} entities from cache for solution: ${solutionUniqueName}`);
+            if (DEBUG) console.log(`[OptionSetManager] Loaded ${cached.length} entities from cache for solution: ${solutionUniqueName}`);
             return cached;
         }
 
         return this.deduplicator.deduplicate(cacheKey, async () => {
-            if (DEBUG) console.log(`[DataverseMetadata] Loading entities for solution: ${solutionUniqueName}`);
+            if (DEBUG) console.log(`[OptionSetManager] Loading entities for solution: ${solutionUniqueName}`);
 
             try {
                 // Step 1: Get solution ID using FetchXML (retrieveMultiple expects FetchXML)
@@ -318,13 +324,13 @@ export class DataverseMetadataService {
                 const solutionResult = await this.dataverseAPI.fetchXmlQuery(solutionFetch);
 
                 if (!solutionResult.value || solutionResult.value.length === 0) {
-                    if (DEBUG) console.log(`[DataverseMetadata] Solution not found: ${solutionUniqueName}`);
+                    if (DEBUG) console.log(`[OptionSetManager] Solution not found: ${solutionUniqueName}`);
                     this.cache.set(cacheKey, []);
                     return [];
                 }
 
                 const solutionId = solutionResult.value[0].solutionid as string;
-                if (DEBUG) console.log(`[DataverseMetadata] Solution ID: ${solutionId}`);
+                if (DEBUG) console.log(`[OptionSetManager] Solution ID: ${solutionId}`);
 
                 // Step 2: Get entity metadata IDs from solutioncomponents using FetchXML
                 const componentsFetch = `
@@ -341,13 +347,13 @@ export class DataverseMetadataService {
                 const componentsResult = await this.dataverseAPI.fetchXmlQuery(componentsFetch);
 
                 if (!componentsResult.value || componentsResult.value.length === 0) {
-                    if (DEBUG) console.log(`[DataverseMetadata] No entity components found in solution: ${solutionUniqueName}`);
+                    if (DEBUG) console.log(`[OptionSetManager] No entity components found in solution: ${solutionUniqueName}`);
                     this.cache.set(cacheKey, []);
                     return [];
                 }
 
                 const entityIds = componentsResult.value.map((c: Record<string, unknown>) => c.objectid as string);
-                if (DEBUG) console.log(`[DataverseMetadata] Found ${entityIds.length} entity components`);
+                if (DEBUG) console.log(`[OptionSetManager] Found ${entityIds.length} entity components`);
 
                 // Step 3: Get EntityDefinitions in chunks of 20 to avoid URL length limits
                 const chunks = chunkArray(entityIds, 20);
@@ -368,11 +374,11 @@ export class DataverseMetadataService {
                     isValidForAdvancedFind: e.IsValidForAdvancedFind ?? true,
                 }));
 
-                if (DEBUG) console.log(`[DataverseMetadata] Loaded ${entities.length} entities for solution: ${solutionUniqueName}`);
+                if (DEBUG) console.log(`[OptionSetManager] Loaded ${entities.length} entities for solution: ${solutionUniqueName}`);
                 this.cache.set(cacheKey, entities);
                 return entities;
             } catch (error) {
-                console.error(`[DataverseMetadata] Error loading entities:`, error);
+                console.error(`[OptionSetManager] Error loading entities:`, error);
                 throw error;
             }
         });
@@ -385,12 +391,12 @@ export class DataverseMetadataService {
         const cacheKey = `entities:all`;
         const cached = this.cache.get<Entity[]>(cacheKey);
         if (cached) {
-            if (DEBUG) console.log(`[DataverseMetadata] Loaded ${cached.length} entities from cache (all)`);
+            if (DEBUG) console.log(`[OptionSetManager] Loaded ${cached.length} entities from cache (all)`);
             return cached;
         }
 
         return this.deduplicator.deduplicate(cacheKey, async () => {
-            if (DEBUG) console.log(`[DataverseMetadata] Loading all entities`);
+            if (DEBUG) console.log(`[OptionSetManager] Loading all entities`);
             const query = `EntityDefinitions?$select=LogicalName,SchemaName,DisplayName,ObjectTypeCode,IsCustomizable,IsValidForAdvancedFind`;
 
             const result = await this.dataverseAPI.queryData(query) as EntityDefinitionResult;
@@ -404,7 +410,7 @@ export class DataverseMetadataService {
                 isValidForAdvancedFind: e.IsValidForAdvancedFind ?? true,
             })).sort((a, b) => a.displayName.localeCompare(b.displayName));
 
-            if (DEBUG) console.log(`[DataverseMetadata] Loaded ${entities.length} entities (all)`);
+            if (DEBUG) console.log(`[OptionSetManager] Loaded ${entities.length} entities (all)`);
             this.cache.set(cacheKey, entities);
             return entities;
         });
@@ -458,12 +464,12 @@ export class DataverseMetadataService {
         const cacheKey = "global-optionsets:all";
         const cached = this.cache.get<GlobalOptionSetSummary[]>(cacheKey);
         if (cached) {
-            if (DEBUG) console.log(`[DataverseMetadata] Loaded ${cached.length} global optionsets from cache`);
+            if (DEBUG) console.log(`[OptionSetManager] Loaded ${cached.length} global optionsets from cache`);
             return cached;
         }
 
         return this.deduplicator.deduplicate(cacheKey, async () => {
-            if (DEBUG) console.log(`[DataverseMetadata] Loading all global optionsets`);
+            if (DEBUG) console.log(`[OptionSetManager] Loading all global optionsets`);
 
             try {
                 // Direct API call - no filtering
@@ -480,11 +486,11 @@ export class DataverseMetadataService {
                 // Sort by display name
                 optionSets.sort((a, b) => (a.DisplayName || a.Name).localeCompare(b.DisplayName || b.Name));
 
-                if (DEBUG) console.log(`[DataverseMetadata] Loaded ${optionSets.length} global optionsets`);
+                if (DEBUG) console.log(`[OptionSetManager] Loaded ${optionSets.length} global optionsets`);
                 this.cache.set(cacheKey, optionSets);
                 return optionSets;
             } catch (error) {
-                console.error(`[DataverseMetadata] Error loading global optionsets:`, error);
+                console.error(`[OptionSetManager] Error loading global optionsets:`, error);
                 throw error;
             }
         });
@@ -497,7 +503,7 @@ export class DataverseMetadataService {
      * fails because Options is not on the declared base type OptionSetMetadataBase.
      */
     async getGlobalOptionSetDetail(name: string): Promise<GlobalOptionSetDetail> {
-        if (DEBUG) console.log(`[DataverseMetadata] Loading global optionset details: ${name}`);
+        if (DEBUG) console.log(`[OptionSetManager] Loading global optionset details: ${name}`);
 
         // No $select — PPTB returns the flat object for single-entity metadata paths.
         const raw = await this.dataverseAPI.queryData(`GlobalOptionSetDefinitions(Name='${name}')`) as unknown as Record<string, unknown>;
@@ -520,7 +526,7 @@ export class DataverseMetadataService {
             Options: (raw["Options"] as OptionMetadata[]) ?? [],
         };
 
-        if (DEBUG) console.log(`[DataverseMetadata] Loaded global optionset "${name}" with ${detail.Options.length} options`);
+        if (DEBUG) console.log(`[OptionSetManager] Loaded global optionset "${name}" with ${detail.Options.length} options`);
         return detail;
     }
 
@@ -529,7 +535,7 @@ export class DataverseMetadataService {
      * Uses type-cast navigation paths to retrieve OptionSetMetadata which includes Options.
      */
     async getLocalChoiceOptions(entityLogicalName: string, attributeLogicalName: string, attributeDisplayName: string): Promise<LocalChoiceDetail> {
-        console.log(`[DataverseMetadata] Loading local choice options: ${entityLogicalName}.${attributeLogicalName}`);
+        console.log(`[OptionSetManager] Loading local choice options: ${entityLogicalName}.${attributeLogicalName}`);
 
         // Navigate through each concrete attribute type until we find the OptionSet
         const typePaths = [
@@ -562,8 +568,30 @@ export class DataverseMetadataService {
             Description: o["Description"] as OptionMetadata["Description"],
         }));
 
-        console.log(`[DataverseMetadata] Loaded ${options.length} options for ${entityLogicalName}.${attributeLogicalName}`);
+        console.log(`[OptionSetManager] Loaded ${options.length} options for ${entityLogicalName}.${attributeLogicalName}`);
         return { entityLogicalName, attributeLogicalName, attributeDisplayName, options };
+    }
+
+    /**
+     * Get the base (default) language code of the Dataverse organization.
+     */
+    async getBaseLanguage(): Promise<number> {
+        const cacheKey = "baseLanguage";
+        const cached = this.cache.get<number>(cacheKey);
+        if (cached) return cached;
+
+        return this.deduplicator.deduplicate(cacheKey, async () => {
+            const result = await this.dataverseAPI.fetchXmlQuery(`
+                <fetch top="1">
+                    <entity name="organization">
+                        <attribute name="languagecode" />
+                    </entity>
+                </fetch>
+            `) as { value: Array<{ languagecode: number }> };
+            const code = result.value[0]?.languagecode ?? 1033;
+            this.cache.set(cacheKey, code);
+            return code;
+        });
     }
 
     /**
@@ -577,13 +605,13 @@ export class DataverseMetadataService {
         }
 
         return this.deduplicator.deduplicate(cacheKey, async () => {
-            if (DEBUG) console.log("[DataverseMetadata] Loading available languages...");
+            if (DEBUG) console.log("[OptionSetManager] Loading available languages...");
             const result = await this.dataverseAPI.execute({
                 operationName: "RetrieveAvailableLanguages",
                 operationType: "function",
             }) as { LocaleIds: number[] };
             const localeIds = result.LocaleIds ?? [];
-            if (DEBUG) console.log(`[DataverseMetadata] Available languages: ${localeIds.join(", ")}`);
+            if (DEBUG) console.log(`[OptionSetManager] Available languages: ${localeIds.join(", ")}`);
             this.cache.set(cacheKey, localeIds);
             return localeIds;
         });
