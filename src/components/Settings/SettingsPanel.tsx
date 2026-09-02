@@ -256,6 +256,16 @@ export function SettingsPanel({ isOpen, onClose, settings, onUpdateSettings, onR
                                 />
                                 <p id="desc-autoAddOnAdd" className={styles.checkboxDescription}>Adds all environment languages to the row without expanding sub-rows.</p>
                             </div>
+
+                            <div className={styles.section}>
+                                <Checkbox
+                                    checked={settings.reorderingAlwaysOn}
+                                    onChange={(_, data) => update({ reorderingAlwaysOn: !!data.checked })}
+                                    label="Always show row reorder controls"
+                                    input={{ "aria-describedby": "desc-reorderingAlwaysOn" }}
+                                />
+                                <p id="desc-reorderingAlwaysOn" className={styles.checkboxDescription}>When off, a toggle button in the grid header enables reordering on demand.</p>
+                            </div>
                         </div>
 
                         <Divider />

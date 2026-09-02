@@ -1,12 +1,12 @@
-import { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, InfoLabel, Input, Label, Spinner, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, InfoLabel, Input, Spinner, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { PlugDisconnectedRegular } from "@fluentui/react-icons";
 import type ToolBoxAPI from "@pptb/types/toolboxAPI";
 import { useState } from "react";
 import type { DataverseMetadataService } from "../../api/dataverseMetadata";
 import type { ActivityEntry } from "../../hooks/useActivityLog";
 import type { MetadataSelection } from "../../models/metadataModels";
-import type { OptionSetDraft, GlobalOptionSetDetail, LocalChoiceDetail } from "../../models/optionSetModels";
-import { ActivityLog, MetadataSelector } from ".";
+import type { OptionSetDraft, GlobalOptionSetDetail, LocalChoiceDetail, ValidationIssue } from "../../models/optionSetModels";
+import { ActivityLog, ErrorLog, MetadataSelector } from ".";
 
 const useStyles = makeStyles({
     sidebar: {
@@ -133,6 +133,12 @@ const useStyles = makeStyles({
         fontSize: tokens.fontSizeBase200,
         color: tokens.colorNeutralForeground3,
     },
+    schemaPrefixBadge: {
+        color: tokens.colorNeutralForeground3,
+        fontSize: tokens.fontSizeBase200,
+        userSelect: "none",
+        paddingRight: tokens.spacingHorizontalXXS,
+    },
 });
 
 export interface SidebarPanelProps {
@@ -178,7 +184,14 @@ export interface SidebarPanelProps {
     // Metadata load handlers
     onGlobalOptionSetLoaded: (detail: GlobalOptionSetDetail) => void;
     onLocalChoiceLoaded: (detail: LocalChoiceDetail) => void;
-    onActivityEntry: (message: string, type: "info" | "success" | "error") => void;
+    onActivityEntry: (message: string, type: "added" | "removed" | "changed" | "loaded" | "reset") => void;
+
+    // Validation issues for error log
+    validationIssues: ValidationIssue[];
+    onIssueClick: (issue: ValidationIssue) => void;
+
+    // Metadata refresh signal from action bar
+    refreshMetadataSignal: number;
 }
 
 export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
@@ -208,6 +221,9 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
         onGlobalOptionSetLoaded,
         onLocalChoiceLoaded,
         onActivityEntry,
+        validationIssues,
+        onIssueClick,
+        refreshMetadataSignal,
     } = props;
 
     const shouldShowProperties =
@@ -310,6 +326,7 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
                             <MetadataSelector
                                 metadataService={metadataService}
                                 scope={draft.scope}
+                                operation={draft.operation}
                                 showSystemOptionSets={showSystemOptionSets}
                                 onShowSystemOptionSetsChange={onToggleShowSystemOptionSets}
                                 selection={metadataSelection}
@@ -320,13 +337,14 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
                                 draftDisplayName={draft.displayName}
                                 draftSchemaName={draft.optionSetSchemaName}
                                 isFormDirty={isFormDirty}
+                                refreshSignal={refreshMetadataSignal}
                             />
                         </div>
                     )}
 
                     {/* Connection loading state */}
                     {isLoading && (
-                        <div className={styles.sidebarEmptyState}>
+                        <div className={styles.sidebarEmptyState} aria-busy="true" aria-live="polite">
                             <Spinner size="medium" label="Checking connection…" />
                         </div>
                     )}
@@ -346,7 +364,7 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
 
                             <div className={styles.sidebarMetadata}>
                                 <div className={styles.metadataField}>
-                                    <InfoLabel htmlFor="sidebar-displayName" size="small" info="The user-friendly name shown in Dataverse and Power Apps. Can be changed anytime.">
+                                    <InfoLabel htmlFor="sidebar-displayName" size="medium" info="The user-friendly name shown in Dataverse and Power Apps. Can be changed anytime.">
                                         Display Name
                                     </InfoLabel>
                                     <Input
@@ -359,33 +377,48 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
                                         aria-invalid={!!getFieldError("displayName")}
                                         aria-describedby={getFieldError("displayName") ? "err-displayName" : undefined}
                                     />
-                                    {getFieldError("displayName") && <span id="err-displayName" className={styles.metadataFieldError} role="alert">{getFieldError("displayName")}</span>}
+                                    {getFieldError("displayName") && (
+                                        <span id="err-displayName" className={styles.metadataFieldError} role="alert">
+                                            {getFieldError("displayName")}
+                                        </span>
+                                    )}
                                 </div>
                                 <div className={styles.metadataField}>
                                     <InfoLabel
                                         htmlFor="sidebar-schemaName"
-                                        size="small"
+                                        size="medium"
                                         info="The unique technical name used in code and APIs. Must start with publisher prefix. Cannot be changed after creation."
                                     >
                                         Schema Name
                                     </InfoLabel>
-                                    <Input
-                                        id="sidebar-schemaName"
-                                        size="small"
-                                        appearance={draft.operation === "update" ? "filled-lighter" : "outline"}
-                                        value={draft.optionSetSchemaName}
-                                        onChange={(_, data) => onSchemaNameChange(data.value)}
-                                        placeholder="prefix_MyOptionSet"
-                                        readOnly={draft.operation === "update"}
-                                        disabled={draft.operation === "update"}
-                                        aria-invalid={draft.operation !== "update" && !!getFieldError("optionSetSchemaName")}
-                                        aria-describedby={draft.operation !== "update" && getFieldError("optionSetSchemaName") ? "err-schemaName" : undefined}
-                                    />
+                                    {(() => {
+                                        const prefix = draft.publisherPrefix && draft.operation !== "update" ? draft.publisherPrefix + "_" : "";
+                                        const suffix = prefix && draft.optionSetSchemaName.startsWith(prefix) ? draft.optionSetSchemaName.slice(prefix.length) : draft.optionSetSchemaName;
+                                        return (
+                                            <Input
+                                                id="sidebar-schemaName"
+                                                size="small"
+                                                appearance={draft.operation === "update" ? "filled-lighter" : "outline"}
+                                                contentBefore={prefix ? <span className={styles.schemaPrefixBadge}>{prefix}</span> : undefined}
+                                                value={suffix}
+                                                onChange={(_, data) => onSchemaNameChange(prefix + data.value)}
+                                                placeholder={prefix ? "MyOptionSet" : "prefix_MyOptionSet"}
+                                                readOnly={draft.operation === "update"}
+                                                disabled={draft.operation === "update"}
+                                                aria-invalid={draft.operation !== "update" && !!getFieldError("optionSetSchemaName")}
+                                                aria-describedby={draft.operation !== "update" && getFieldError("optionSetSchemaName") ? "err-schemaName" : undefined}
+                                            />
+                                        );
+                                    })()}
                                     {draft.operation === "update" && <span className={styles.metadataFieldHint}>Schema name is read-only after creation</span>}
-                                    {draft.operation !== "update" && getFieldError("optionSetSchemaName") && <span id="err-schemaName" className={styles.metadataFieldError} role="alert">{getFieldError("optionSetSchemaName")}</span>}
+                                    {draft.operation !== "update" && getFieldError("optionSetSchemaName") && (
+                                        <span id="err-schemaName" className={styles.metadataFieldError} role="alert">
+                                            {getFieldError("optionSetSchemaName")}
+                                        </span>
+                                    )}
                                 </div>
                                 <div className={styles.metadataField}>
-                                    <InfoLabel htmlFor="sidebar-description" size="small" info="Optional documentation text describing this option set's purpose.">
+                                    <InfoLabel htmlFor="sidebar-description" size="medium" info="Optional documentation text describing this option set's purpose.">
                                         Description
                                     </InfoLabel>
                                     <Input
@@ -397,18 +430,6 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
                                         placeholder="Optional description…"
                                     />
                                 </div>
-                                {draft.publisherPrefix && (
-                                    <div className={styles.metadataField}>
-                                        <Label size="small">Publisher Prefix</Label>
-                                        <span className={styles.metadataReadOnlyValue}>{draft.publisherPrefix}</span>
-                                    </div>
-                                )}
-                                {draft.solutionUniqueName && (
-                                    <div className={styles.metadataField}>
-                                        <Label size="small">Solution</Label>
-                                        <span className={styles.metadataReadOnlyValue}>{draft.solutionUniqueName}</span>
-                                    </div>
-                                )}
                             </div>
                         </>
                     )}
@@ -430,6 +451,7 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
                     </DialogBody>
                 </DialogSurface>
             </Dialog>
+            <ErrorLog issues={validationIssues} onIssueClick={onIssueClick} />
             <ActivityLog entries={activityEntries} isExpanded={activityLogExpanded} onToggle={onActivityLogToggle} />
         </aside>
     );

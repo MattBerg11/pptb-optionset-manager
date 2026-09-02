@@ -56,6 +56,9 @@ export interface OptionSetManagerSettings {
 
     /** Auto-add all environment languages when a new row is added. */
     autoAddAllLanguagesOnAdd: boolean;
+
+    /** When true, row reordering controls are always visible; when false a toggle button controls them. */
+    reorderingAlwaysOn: boolean;
 }
 
 export const DEFAULT_SETTINGS: OptionSetManagerSettings = {
@@ -73,4 +76,5 @@ export const DEFAULT_SETTINGS: OptionSetManagerSettings = {
     hideRowAdvancedProperties: false,
     autoExpandSubrowsOnAdd: false,
     autoAddAllLanguagesOnAdd: false,
+    reorderingAlwaysOn: false,
 };

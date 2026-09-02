@@ -1,8 +1,15 @@
 import { Button, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { ChevronDownRegular, ChevronRightRegular } from "@fluentui/react-icons";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { OptionDraftRow, ValidationIssue } from "../../models/optionSetModels";
 import { LanguagePickerRow, LanguageSubRow, OptionRowMain } from "../grid";
+
+const VIRTUAL_THRESHOLD = 50;
+const OVERSCAN = 8;
+const BASE_ROW_H = 37;
+const SUBROW_H = 37;
+const PICKER_ROW_H = 45;
+const ERROR_LINE_H = 20;
 
 const useStyles = makeStyles({
     panel: {
@@ -206,6 +213,9 @@ const useStyles = makeStyles({
     dragOverRow: {
         outline: `2px solid ${tokens.colorBrandStroke1}`,
     },
+    rowDirty: {
+        boxShadow: `inset 3px 0 0 ${tokens.colorBrandStroke1}`,
+    },
     colorSwatch: {
         width: "16px",
         height: "16px",
@@ -213,8 +223,9 @@ const useStyles = makeStyles({
         borderRadius: tokens.borderRadiusSmall,
         border: `1px solid ${tokens.colorNeutralStroke1}`,
         padding: 0,
+        marginRight: tokens.spacingHorizontalXS,
         cursor: "pointer",
-        flexShrink: 0,
+        flexShrink: 1,
         background: "transparent",
     },
     colorInput: {
@@ -256,6 +267,8 @@ interface OptionValuesGridProps {
     validateBlankTranslationRows?: boolean;
     autoAddAllLanguages?: boolean;
     autoAddEnglishSubrow?: boolean;
+    dirtyRowIds?: ReadonlySet<string>;
+    reorderingAlwaysOn?: boolean;
 }
 
 export function OptionValuesGrid({
@@ -280,6 +293,8 @@ export function OptionValuesGrid({
     autoAddAllLanguagesOnAdd,
     autoAddAllLanguages,
     autoAddEnglishSubrow,
+    dirtyRowIds,
+    reorderingAlwaysOn,
 }: OptionValuesGridProps): JSX.Element {
     const styles = useStyles();
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -287,6 +302,12 @@ export function OptionValuesGrid({
     const [dragOverRowId, setDragOverRowId] = useState<string | null>(null);
     const [applyOrderPending, setApplyOrderPending] = useState(false);
     const prevRowIdsRef = useRef<string[]>([]);
+    const [reorderingToggled, setReorderingToggled] = useState(false);
+    const isReorderingEnabled = !!reorderingAlwaysOn || reorderingToggled;
+    const tableWrapperRef = useRef<HTMLDivElement>(null);
+    const [scrollTop, setScrollTop] = useState(0);
+    const containerHeightRef = useRef(600);
+    const isVirtualized = rows.length > VIRTUAL_THRESHOLD;
 
     // Detect newly added rows and apply auto-expand / auto-add-languages.
     // Also resets expanded state on full structural changes (load/reset).
@@ -327,10 +348,7 @@ export function OptionValuesGrid({
                     if (toAdd.length === 0) return current;
                     return {
                         ...current,
-                        labels: [
-                            ...current.labels,
-                            ...toAdd.map((c) => ({ languageCode: c, label: "", description: "" })),
-                        ],
+                        labels: [...current.labels, ...toAdd.map((c) => ({ languageCode: c, label: "", description: "" }))],
                     };
                 });
             });
@@ -347,8 +365,8 @@ export function OptionValuesGrid({
                 });
             });
         }
-    // onUpdateRow identity is stable from useCallback
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // onUpdateRow identity is stable from useCallback
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rows.length, autoExpandSubrowsOnAdd, autoAddAllLanguagesOnAdd, autoAddEnglishSubrow, defaultLanguageCode]);
 
     const allExpanded = rows.length > 0 && rows.every((r) => expandedRows.has(r.rowId));
@@ -396,10 +414,7 @@ export function OptionValuesGrid({
                         if (toAdd.length === 0) return current;
                         return {
                             ...current,
-                            labels: [
-                                ...current.labels,
-                                ...toAdd.map((c) => ({ languageCode: c, label: "", description: "" })),
-                            ],
+                            labels: [...current.labels, ...toAdd.map((c) => ({ languageCode: c, label: "", description: "" }))],
                         };
                     });
                 }
@@ -481,10 +496,78 @@ export function OptionValuesGrid({
         });
     };
 
+    // ── Virtual scrolling ─────────────────────────────────────────────────────
+    const rowGroupHeights = useMemo(() => {
+        if (!isVirtualized) return [];
+        return rows.map((row) => {
+            let h = BASE_ROW_H;
+            if (hasValidated) {
+                const errCount = validationIssues.filter((i) => i.rowId === row.rowId).length;
+                if (errCount > 0) h += errCount * ERROR_LINE_H + 8;
+            }
+            if (!singleLanguageMode && expandedRows.has(row.rowId)) {
+                const langCount = row.labels.filter((l) => l.languageCode !== defaultLanguageCode).length;
+                h += langCount * SUBROW_H + PICKER_ROW_H;
+            }
+            return h;
+        });
+    }, [isVirtualized, rows, hasValidated, validationIssues, singleLanguageMode, expandedRows, defaultLanguageCode]);
+
+    const cumulativeOffsets = useMemo(() => {
+        let cum = 0;
+        return rowGroupHeights.map((h) => {
+            const start = cum;
+            cum += h;
+            return start;
+        });
+    }, [rowGroupHeights]);
+
+    const totalRowsHeight = useMemo(() => {
+        if (!isVirtualized || rowGroupHeights.length === 0) return 0;
+        return cumulativeOffsets[cumulativeOffsets.length - 1] + rowGroupHeights[rowGroupHeights.length - 1];
+    }, [isVirtualized, cumulativeOffsets, rowGroupHeights]);
+
+    const { visibleStart, visibleEnd } = useMemo(() => {
+        if (!isVirtualized) return { visibleStart: 0, visibleEnd: rows.length - 1 };
+        const viewStart = Math.max(0, scrollTop - OVERSCAN * BASE_ROW_H);
+        const viewEnd = scrollTop + containerHeightRef.current + OVERSCAN * BASE_ROW_H;
+        let start = 0;
+        let end = rows.length - 1;
+        for (let i = 0; i < cumulativeOffsets.length; i++) {
+            if (cumulativeOffsets[i] <= viewStart) start = i;
+            if (cumulativeOffsets[i] <= viewEnd) end = i;
+            else break;
+        }
+        return { visibleStart: start, visibleEnd: Math.min(rows.length - 1, end + 1) };
+    }, [isVirtualized, scrollTop, cumulativeOffsets, rows.length]);
+
+    const topSpacerH = isVirtualized ? (cumulativeOffsets[visibleStart] ?? 0) : 0;
+    const bottomSpacerH = isVirtualized ? Math.max(0, totalRowsHeight - (cumulativeOffsets[visibleEnd] ?? 0) - (rowGroupHeights[visibleEnd] ?? 0)) : 0;
+
+    const handleTableScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+        containerHeightRef.current = e.currentTarget.clientHeight;
+        setScrollTop(e.currentTarget.scrollTop);
+    }, []);
+
+    const colCount = isReorderingEnabled ? 6 : 5;
+    const visibleRows = isVirtualized ? rows.slice(visibleStart, visibleEnd + 1) : rows;
+    // ─────────────────────────────────────────────────────────────────────────
+
     if (rows.length === 0) {
         return (
             <section className={styles.panel}>
                 <div className={styles.panelHeader}>
+                    {!reorderingAlwaysOn && (
+                        <Button
+                            appearance={reorderingToggled ? "primary" : "secondary"}
+                            size="small"
+                            onClick={() => setReorderingToggled((v) => !v)}
+                            title={reorderingToggled ? "Disable row reordering" : "Enable row reordering"}
+                            aria-pressed={reorderingToggled}
+                        >
+                            {reorderingToggled ? "Reordering On" : "Reorder"}
+                        </Button>
+                    )}
                     <Button appearance="primary" size="small" onClick={onAddRow}>
                         Add Row
                     </Button>
@@ -499,10 +582,17 @@ export function OptionValuesGrid({
     return (
         <section className={styles.panel}>
             <div className={styles.panelHeader}>
+                {!reorderingAlwaysOn && (
+                    <Tooltip content={reorderingToggled ? "Disable row reordering" : "Enable drag-to-reorder and Alt+\u2191/\u2193 keyboard shortcut"} relationship="description">
+                        <Button appearance={reorderingToggled ? "primary" : "secondary"} size="small" onClick={() => setReorderingToggled((v) => !v)} aria-pressed={reorderingToggled}>
+                            {reorderingToggled ? "Reordering On" : "Reorder"}
+                        </Button>
+                    </Tooltip>
+                )}
                 <Button appearance="primary" size="small" onClick={onAddRow}>
                     Add Row
                 </Button>
-                {isLoaded && rows.length > 0 && onApplyOrder && (
+                {isLoaded && isReorderingEnabled && rows.length > 0 && onApplyOrder && (
                     <Tooltip content="Reorder options in Dataverse to match your current table order" relationship="description">
                         <Button
                             appearance="secondary"
@@ -521,10 +611,15 @@ export function OptionValuesGrid({
                 )}
             </div>
 
-            <div className={styles.tableWrapper}>
+            <div
+                className={styles.tableWrapper}
+                ref={tableWrapperRef}
+                onScroll={isVirtualized ? handleTableScroll : undefined}
+                style={isVirtualized ? { maxHeight: 600, overflowY: "auto" } : undefined}
+            >
                 <table className={styles.table} aria-label="Option values">
                     <colgroup>
-                        <col style={{ width: 42 }} />
+                        {isReorderingEnabled && <col style={{ width: 32 }} />}
                         <col style={{ width: 32 }} />
                         <col style={{ width: "25%" }} />
                         <col style={{ width: "15%" }} />
@@ -533,7 +628,7 @@ export function OptionValuesGrid({
                     </colgroup>
                     <thead className={styles.tableHead}>
                         <tr>
-                            <th className={mergeClasses(styles.th, styles.dragCell)} scope="col" />
+                            {isReorderingEnabled && <th className={mergeClasses(styles.th, styles.dragCell)} scope="col" />}
                             <th className={mergeClasses(styles.th, styles.chevronCell)} scope="col">
                                 {!singleLanguageMode && (
                                     <Button
@@ -560,10 +655,14 @@ export function OptionValuesGrid({
                         </tr>
                     </thead>
                     <tbody>
-                        {rows.map((row) => {
+                        {isVirtualized && topSpacerH > 0 && (
+                            <tr key="__spacer-top" style={{ height: topSpacerH }} aria-hidden="true">
+                                <td colSpan={colCount} />
+                            </tr>
+                        )}
+                        {visibleRows.map((row) => {
                             const isExpanded = expandedRows.has(row.rowId);
                             const otherLanguages = row.labels.filter((entry) => entry.languageCode !== defaultLanguageCode);
-                            // Always include defaultLanguageCode so it can never be added as a sub-row
                             const existingLanguageCodes = [...new Set([defaultLanguageCode, ...row.labels.map((entry) => entry.languageCode)])];
 
                             return (
@@ -586,11 +685,13 @@ export function OptionValuesGrid({
                                         setDragOverRowId={setDragOverRowId}
                                         onReorderRows={onReorderRows}
                                         hideAdvancedProperties={hideRowAdvancedProperties}
+                                        isDirty={dirtyRowIds?.has(row.rowId)}
+                                        reorderingEnabled={isReorderingEnabled}
                                     />
 
                                     {hasValidated && validationIssues.filter((i) => i.rowId === row.rowId).length > 0 && (
                                         <tr key={`${row.rowId}-errors`}>
-                                                <td colSpan={6} className={styles.rowValidationMessages}>
+                                            <td colSpan={colCount} className={styles.rowValidationMessages}>
                                                 {validationIssues
                                                     .filter((i) => i.rowId === row.rowId)
                                                     .map((issue, i) => (
@@ -602,7 +703,6 @@ export function OptionValuesGrid({
                                         </tr>
                                     )}
 
-                                    {/* Language sub-rows */}
                                     {!singleLanguageMode &&
                                         isExpanded &&
                                         otherLanguages.map((langEntry) => (
@@ -620,6 +720,7 @@ export function OptionValuesGrid({
                                                 onUpdateLanguageDescription={handleUpdateLanguageDescription}
                                                 onUpdateLanguageHidden={handleUpdateLanguageHidden}
                                                 onRemoveLanguage={handleRemoveLanguage}
+                                                reorderingEnabled={isReorderingEnabled}
                                             />
                                         ))}
 
@@ -631,11 +732,17 @@ export function OptionValuesGrid({
                                             existingLanguageCodes={existingLanguageCodes}
                                             onAddLanguage={handleAddLanguage}
                                             sortLanguagesByCode={sortLanguagesByCode}
+                                            reorderingEnabled={isReorderingEnabled}
                                         />
                                     )}
                                 </Fragment>
                             );
                         })}
+                        {isVirtualized && bottomSpacerH > 0 && (
+                            <tr key="__spacer-bottom" style={{ height: bottomSpacerH }} aria-hidden="true">
+                                <td colSpan={colCount} />
+                            </tr>
+                        )}
                     </tbody>
                 </table>
             </div>

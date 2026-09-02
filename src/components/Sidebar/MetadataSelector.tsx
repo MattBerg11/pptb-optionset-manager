@@ -14,7 +14,6 @@ import {
     DialogContent,
     DialogSurface,
     DialogTitle,
-    Divider,
     Dropdown,
     InfoLabel,
     makeStyles,
@@ -27,11 +26,11 @@ import {
     Spinner,
     tokens,
 } from "@fluentui/react-components";
-import { ArrowSyncRegular, DismissRegular, FilterRegular } from "@fluentui/react-icons";
+import { DismissRegular, FilterRegular } from "@fluentui/react-icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChoiceAttribute, DataverseMetadataService, Entity, Publisher, Solution } from "../../api/dataverseMetadata";
 import type { MetadataSelection } from "../../models/metadataModels";
-import type { GlobalOptionSetDetail, GlobalOptionSetSummary, LocalChoiceDetail, OptionSetScope } from "../../models/optionSetModels";
+import type { GlobalOptionSetDetail, GlobalOptionSetSummary, LocalChoiceDetail, OptionSetOperation, OptionSetScope } from "../../models/optionSetModels";
 
 const useStyles = makeStyles({
     root: {
@@ -44,23 +43,10 @@ const useStyles = makeStyles({
         flexDirection: "column",
         gap: tokens.spacingVerticalXS,
     },
-    fieldAccent: {
-        display: "flex",
-        flexDirection: "column",
-        gap: tokens.spacingVerticalXS,
-        padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalXS}`,
-        borderRadius: tokens.borderRadiusMedium,
-        border: `${tokens.strokeWidthThin} solid ${tokens.colorBrandStroke2}`,
-        backgroundColor: tokens.colorNeutralBackground2,
-        boxShadow: `inset 0 0 0 1px ${tokens.colorBrandStroke2}`,
-    },
-    sectionLabel: {
-        fontSize: tokens.fontSizeBase200,
+    requiredMark: {
+        color: tokens.colorPaletteRedForeground2,
         fontWeight: tokens.fontWeightSemibold,
-        color: tokens.colorNeutralForeground3,
-        textTransform: "uppercase",
-        letterSpacing: "0.05em",
-        paddingTop: tokens.spacingVerticalS,
+        marginRight: "2px",
     },
     errorMessage: {
         display: "flex",
@@ -94,11 +80,17 @@ const useStyles = makeStyles({
     labelRow: {
         display: "flex",
         alignItems: "center",
-        justifyContent: "space-between",
+        gap: tokens.spacingHorizontalXS,
+        minHeight: "20px",
     },
-    divider: {
-        paddingTop: tokens.spacingVerticalXS,
-        paddingBottom: tokens.spacingVerticalXS,
+    fieldErrorText: {
+        fontSize: tokens.fontSizeBase200,
+        color: tokens.colorPaletteRedForeground2,
+        marginTop: tokens.spacingVerticalXXS,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: tokens.spacingHorizontalXS,
     },
     optionSecondaryText: {
         color: tokens.colorNeutralForeground3,
@@ -110,16 +102,18 @@ const useStyles = makeStyles({
 interface MetadataSelectorProps {
     metadataService: DataverseMetadataService;
     scope: OptionSetScope;
+    operation?: OptionSetOperation;
     showSystemOptionSets: boolean;
     onShowSystemOptionSetsChange: (value: boolean) => void;
     selection: MetadataSelection;
     onSelectionChange: (partial: Partial<MetadataSelection>) => void;
     onGlobalOptionSetLoaded?: (detail: GlobalOptionSetDetail) => void;
     onLocalChoiceLoaded?: (detail: LocalChoiceDetail) => void;
-    onActivityEntry?: (message: string, type: "info" | "success" | "error") => void;
+    onActivityEntry?: (message: string, type: "added" | "removed" | "changed" | "loaded" | "reset") => void;
     draftDisplayName?: string;
     draftSchemaName?: string;
     isFormDirty?: boolean;
+    refreshSignal?: number;
 }
 
 export function MetadataSelector({
@@ -135,6 +129,7 @@ export function MetadataSelector({
     draftDisplayName = "",
     draftSchemaName = "",
     isFormDirty = false,
+    refreshSignal,
 }: MetadataSelectorProps): JSX.Element {
     const styles = useStyles();
     const [publishers, setPublishers] = useState<Publisher[]>([]);
@@ -159,8 +154,19 @@ export function MetadataSelector({
     const [pendingGlobalOptionSetName, setPendingGlobalOptionSetName] = useState<string | null>(null);
     const [confirmGlobalOptionSetChangeOpen, setConfirmGlobalOptionSetChangeOpen] = useState(false);
 
-    const [errors, setErrors] = useState<string[]>([]);
+    const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
     const [loadAllEntitiesClicked, setLoadAllEntitiesClicked] = useState(false);
+
+    const setFieldError = (key: string, msg: string | null): void => {
+        setFieldErrors((prev) => {
+            if (msg === null) {
+                const { [key]: _, ...rest } = prev;
+                return rest;
+            }
+            return { ...prev, [key]: msg };
+        });
+    };
+    const clearAllErrors = (): void => setFieldErrors({});
 
     // Stable ref so load callbacks don't need onActivityEntry in their deps
     const activityRef = useRef(onActivityEntry);
@@ -171,11 +177,10 @@ export function MetadataSelector({
         try {
             const data = await metadataService.getPublishers();
             setPublishers(data);
-            setErrors([]);
-            activityRef.current?.("Retrieved publishers", "success");
+            setFieldError("publishers", null);
         } catch (err) {
             const msg = err instanceof Error ? err.message : "Failed to load publishers";
-            setErrors((prev) => [...prev, msg]);
+            setFieldError("publishers", msg);
             window.toolboxAPI?.utils?.showNotification?.({
                 title: "Failed to load publishers",
                 body: msg,
@@ -193,11 +198,9 @@ export function MetadataSelector({
             try {
                 const data = await metadataService.getSolutions(publisherId);
                 setSolutions(data);
-                setErrors([]);
-                const publisherName = publishers.find((p) => p.publisherId === publisherId)?.friendlyName ?? publisherId;
-                activityRef.current?.(`Retrieved solutions for ${publisherName}`, "success");
+                setFieldError("solutions", null);
             } catch (err) {
-                setErrors((prev) => [...prev, err instanceof Error ? err.message : "Failed to load solutions"]);
+                setFieldError("solutions", err instanceof Error ? err.message : "Failed to load solutions");
             } finally {
                 setLoading("solutions", false);
             }
@@ -211,9 +214,9 @@ export function MetadataSelector({
             try {
                 const data = await metadataService.getEntities(solutionUniqueName);
                 setEntities(data);
-                setErrors([]);
+                setFieldError("entities", null);
             } catch (err) {
-                setErrors((prev) => [...prev, err instanceof Error ? err.message : "Failed to load entities"]);
+                setFieldError("entities", err instanceof Error ? err.message : "Failed to load entities");
             } finally {
                 setLoading("entities", false);
             }
@@ -227,9 +230,9 @@ export function MetadataSelector({
         try {
             const data = await metadataService.getAllEntities();
             setEntities(data);
-            setErrors([]);
+            setFieldError("entities", null);
         } catch (err) {
-            setErrors((prev) => [...prev, err instanceof Error ? err.message : "Failed to load entities"]);
+            setFieldError("entities", err instanceof Error ? err.message : "Failed to load entities");
         } finally {
             setLoading("entities", false);
         }
@@ -241,9 +244,9 @@ export function MetadataSelector({
             try {
                 const data = await metadataService.getChoiceAttributes(entityLogicalName);
                 setAttributes(data);
-                setErrors([]);
+                setFieldError("attributes", null);
             } catch (err) {
-                setErrors((prev) => [...prev, err instanceof Error ? err.message : "Failed to load attributes"]);
+                setFieldError("attributes", err instanceof Error ? err.message : "Failed to load attributes");
             } finally {
                 setLoading("attributes", false);
             }
@@ -256,9 +259,9 @@ export function MetadataSelector({
         try {
             const data = await metadataService.getGlobalOptionSets();
             setGlobalOptionSets(data);
-            setErrors([]);
+            setFieldError("globalOptionSets", null);
         } catch (err) {
-            setErrors((prev) => [...prev, err instanceof Error ? err.message : "Failed to load global option sets"]);
+            setFieldError("globalOptionSets", err instanceof Error ? err.message : "Failed to load global option sets");
         } finally {
             setLoading("globalOptionSets", false);
         }
@@ -305,6 +308,16 @@ export function MetadataSelector({
             setOptionSetFilter("");
         }
     }, [scope, loadGlobalOptionSets]);
+
+    // Trigger refresh when parent increments the signal
+    const prevRefreshSignalRef = useRef(refreshSignal ?? 0);
+    useEffect(() => {
+        if (refreshSignal !== undefined && refreshSignal !== prevRefreshSignalRef.current) {
+            prevRefreshSignalRef.current = refreshSignal;
+            handleRefresh();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [refreshSignal]);
 
     const handlePublisherChange = (_: unknown, data: { optionValue?: string | undefined }): void => {
         const publisherId = data.optionValue ?? "";
@@ -370,10 +383,9 @@ export function MetadataSelector({
                 .getLocalChoiceOptions(selection.entityLogicalName, attributeLogicalName, attribute.displayName)
                 .then((detail) => {
                     onLocalChoiceLoaded(detail);
-                    activityRef.current?.(`Retrieved options for ${selection.entityLogicalName}.${attributeLogicalName}`, "success");
                 })
                 .catch((err: unknown) => {
-                    setErrors((prev) => [...prev, err instanceof Error ? err.message : "Failed to load choice options"]);
+                    setFieldError("attributes", err instanceof Error ? err.message : "Failed to load choice options");
                 })
                 .finally(() => {
                     setLoading("localChoice", false);
@@ -391,9 +403,8 @@ export function MetadataSelector({
                 try {
                     const detail = await metadataService.getGlobalOptionSetDetail(name);
                     onGlobalOptionSetLoaded(detail);
-                    activityRef.current?.(`Retrieved ${name} option set`, "success");
                 } catch (err) {
-                    setErrors((prev) => [...prev, err instanceof Error ? err.message : "Failed to load option set details"]);
+                    setFieldError("globalOptionSets", err instanceof Error ? err.message : "Failed to load option set details");
                 } finally {
                     setLoading("optionSetDetail", false);
                 }
@@ -423,7 +434,7 @@ export function MetadataSelector({
         setEntities([]);
         setAttributes([]);
         setGlobalOptionSets([]);
-        setErrors([]);
+        clearAllErrors();
         setOptionSetFilter("");
         void loadPublishers();
     }, [metadataService, onSelectionChange, loadPublishers]);
@@ -470,7 +481,7 @@ export function MetadataSelector({
         ? globalOptionSets.find((os) => os.Name === selection.selectedGlobalOptionSetName)?.DisplayName || selection.selectedGlobalOptionSetName
         : "";
 
-    // Keep the selector visible when a global option set is already selected so users can reload it or switch it.
+    // Show when an option set is already selected (to switch), or when the form is blank (ready to browse)
     const showGlobalOptionSetDropdown = selection.selectedGlobalOptionSetName !== null || (draftDisplayName.trim() === "" && draftSchemaName.trim() === "");
 
     const attemptGlobalOptionSetChange = (nextName: string): void => {
@@ -500,19 +511,19 @@ export function MetadataSelector({
         void handleGlobalOptionSetSelect(nextName);
     };
 
+    const renderFieldError = (key: string): JSX.Element | null => {
+        const msg = fieldErrors[key];
+        if (!msg) return null;
+        return (
+            <div id={`field-error-${key}`} className={styles.fieldErrorText} role="alert">
+                <span>{msg}</span>
+                <Button size="small" appearance="subtle" icon={<DismissRegular />} onClick={() => setFieldError(key, null)} aria-label="Dismiss error" />
+            </div>
+        );
+    };
+
     return (
         <div className={styles.root}>
-            {errors.length > 0 && (
-                <div className={styles.errorList}>
-                    {errors.map((err, i) => (
-                        <div key={i} className={styles.errorMessage}>
-                            <span>{err}</span>
-                            <Button size="small" appearance="subtle" icon={<DismissRegular />} onClick={() => setErrors((prev) => prev.filter((_, j) => j !== i))} aria-label="Dismiss error" />
-                        </div>
-                    ))}
-                </div>
-            )}
-
             <Dialog
                 open={confirmGlobalOptionSetChangeOpen}
                 onOpenChange={(_, data) => {
@@ -548,21 +559,16 @@ export function MetadataSelector({
 
             {scope === "global" ? (
                 <>
-                    {selection.selectedGlobalOptionSetName && (
-                        <div className={styles.divider}>
-                            <Divider />
-                        </div>
-                    )}
-                    {selection.selectedGlobalOptionSetName && <div className={styles.sectionLabel}>Publish Context</div>}
-                    {!selection.selectedGlobalOptionSetName && <div className={styles.sectionLabel}>Creation Context</div>}
-
                     {/* Publisher */}
                     <div className={styles.field}>
                         <div className={styles.labelRow}>
                             <InfoLabel size="medium" info="The publisher that owns this option set. Determines the schema name prefix.">
-                                Publisher {!selection.selectedGlobalOptionSetName && "*"} {isLoading("publishers") ? <Spinner size="tiny" /> : null}
+                                <span className={styles.requiredMark} aria-hidden>
+                                    *
+                                </span>
+                                Publisher
                             </InfoLabel>
-                            <Button size="small" appearance="subtle" icon={<ArrowSyncRegular />} onClick={handleRefresh} title="Refresh metadata" aria-label="Refresh metadata" />
+                            {isLoading("publishers") && <Spinner size="tiny" />}
                         </div>
                         <Dropdown
                             className={styles.fieldControl}
@@ -574,6 +580,7 @@ export function MetadataSelector({
                             disabled={isLoading("publishers")}
                             aria-label="Publisher"
                             aria-busy={isLoading("publishers")}
+                            aria-describedby={fieldErrors["publishers"] ? "field-error-publishers" : undefined}
                             size="small"
                         >
                             {publishers.map((p) => (
@@ -582,17 +589,26 @@ export function MetadataSelector({
                                 </Option>
                             ))}
                         </Dropdown>
+                        {renderFieldError("publishers")}
                     </div>
 
                     {/* Solution */}
                     {selection.publisherId && (
                         <div className={styles.field}>
-                            <InfoLabel
-                                size="medium"
-                                info="Dataverse requires every global Choice to belong to a solution for change tracking and ALM. Without a solution, the option set cannot be published or transported between environments."
-                            >
-                                Solution {!selection.selectedGlobalOptionSetName && "*"} {isLoading("solutions") ? <Spinner size="tiny" /> : null}
-                            </InfoLabel>
+                            <div className={styles.labelRow}>
+                                <InfoLabel
+                                    size="medium"
+                                    info="Dataverse requires every global Choice to belong to a solution for change tracking and ALM. Without a solution, the option set cannot be published or transported between environments."
+                                >
+                                    {!selection.selectedGlobalOptionSetName && (
+                                        <span className={styles.requiredMark} aria-hidden>
+                                            *
+                                        </span>
+                                    )}
+                                    Solution
+                                </InfoLabel>
+                                {isLoading("solutions") && <Spinner size="tiny" />}
+                            </div>
                             <Dropdown
                                 className={styles.fieldControl}
                                 listbox={{ style: narrowListboxStyle }}
@@ -603,6 +619,7 @@ export function MetadataSelector({
                                 disabled={isLoading("solutions") || !selection.publisherId}
                                 aria-label="Solution"
                                 aria-busy={isLoading("solutions")}
+                                aria-describedby={fieldErrors["solutions"] ? "field-error-solutions" : undefined}
                                 size="small"
                             >
                                 {solutions.map((s) => (
@@ -611,19 +628,24 @@ export function MetadataSelector({
                                     </Option>
                                 ))}
                             </Dropdown>
+                            {renderFieldError("solutions")}
                         </div>
                     )}
 
                     {showGlobalOptionSetDropdown && (
-                        <div className={selection.selectedGlobalOptionSetName ? styles.fieldAccent : styles.field}>
-                            <InfoLabel size="medium" info="Browse and select an existing global option set to edit, or leave empty to create a new one.">
-                                Global Option Set {isLoading("globalOptionSets") || isLoading("optionSetDetail") ? <Spinner size="tiny" /> : null}
-                            </InfoLabel>
+                        <div className={styles.field}>
+                            <div className={styles.labelRow}>
+                                <InfoLabel size="medium" info="Browse and select an existing global option set to edit, or leave empty to create a new one.">
+                                    Global Option Set
+                                </InfoLabel>
+                                {(isLoading("globalOptionSets") || isLoading("optionSetDetail")) && <Spinner size="tiny" />}
+                            </div>
                             <div className={styles.fieldRow}>
                                 <Combobox
                                     className={styles.fieldInput}
                                     aria-label="Search or select a global option set"
                                     aria-busy={isLoading("globalOptionSets") || isLoading("optionSetDetail")}
+                                    aria-describedby={fieldErrors["globalOptionSets"] ? "field-error-globalOptionSets" : undefined}
                                     listbox={{ style: wideListboxStyle }}
                                     placeholder="Search or select an option set…"
                                     value={selectedOptionSetDisplay || optionSetFilter}
@@ -694,6 +716,7 @@ export function MetadataSelector({
                                     </MenuPopover>
                                 </Menu>
                             </div>
+                            {renderFieldError("globalOptionSets")}
                         </div>
                     )}
                 </>
@@ -703,9 +726,9 @@ export function MetadataSelector({
                     <div className={styles.field}>
                         <div className={styles.labelRow}>
                             <InfoLabel size="medium" info="The publisher that owns the table and field you want to modify.">
-                                Publisher {isLoading("publishers") ? <Spinner size="tiny" /> : null}
+                                Publisher
                             </InfoLabel>
-                            <Button size="small" appearance="subtle" icon={<ArrowSyncRegular />} onClick={handleRefresh} title="Refresh metadata" aria-label="Refresh metadata" />
+                            {isLoading("publishers") && <Spinner size="tiny" />}
                         </div>
                         <Dropdown
                             className={styles.fieldControl}
@@ -715,6 +738,9 @@ export function MetadataSelector({
                             selectedOptions={selection.publisherId ? [selection.publisherId] : []}
                             onOptionSelect={handlePublisherChange}
                             disabled={isLoading("publishers")}
+                            aria-label="Publisher"
+                            aria-busy={isLoading("publishers")}
+                            aria-describedby={fieldErrors["publishers"] ? "field-error-publishers" : undefined}
                             size="small"
                         >
                             {publishers.map((p) => (
@@ -723,12 +749,16 @@ export function MetadataSelector({
                                 </Option>
                             ))}
                         </Dropdown>
+                        {renderFieldError("publishers")}
                     </div>
 
                     <div className={styles.field}>
-                        <InfoLabel size="medium" info="The solution that contains the table you want to modify.">
-                            Solution {isLoading("solutions") ? <Spinner size="tiny" /> : null}
-                        </InfoLabel>
+                        <div className={styles.labelRow}>
+                            <InfoLabel size="medium" info="The solution that contains the table you want to modify.">
+                                Solution
+                            </InfoLabel>
+                            {isLoading("solutions") && <Spinner size="tiny" />}
+                        </div>
                         <Dropdown
                             className={styles.fieldControl}
                             listbox={{ style: narrowListboxStyle }}
@@ -737,6 +767,9 @@ export function MetadataSelector({
                             selectedOptions={selection.solutionId ? [selection.solutionId] : []}
                             onOptionSelect={handleSolutionChange}
                             disabled={isLoading("solutions") || !selection.publisherId}
+                            aria-label="Solution"
+                            aria-busy={isLoading("solutions")}
+                            aria-describedby={fieldErrors["solutions"] ? "field-error-solutions" : undefined}
                             size="small"
                         >
                             {solutions.map((s) => (
@@ -745,12 +778,16 @@ export function MetadataSelector({
                                 </Option>
                             ))}
                         </Dropdown>
+                        {renderFieldError("solutions")}
                     </div>
 
                     <div className={styles.field}>
-                        <InfoLabel size="medium" info="The table (entity) that contains the choice field you want to edit.">
-                            Entity {isLoading("entities") ? <Spinner size="tiny" /> : null}
-                        </InfoLabel>
+                        <div className={styles.labelRow}>
+                            <InfoLabel size="medium" info="The table (entity) that contains the choice field you want to edit.">
+                                Entity
+                            </InfoLabel>
+                            {isLoading("entities") && <Spinner size="tiny" />}
+                        </div>
                         {!selection.solutionId && !loadAllEntitiesClicked && !isLoading("entities") && entities.length === 0 && (
                             <Button appearance="secondary" size="small" onClick={() => void loadAllEntities()}>
                                 Load all entities
@@ -764,6 +801,9 @@ export function MetadataSelector({
                             selectedOptions={selection.entityLogicalName ? [selection.entityLogicalName] : []}
                             onOptionSelect={handleEntityChange}
                             disabled={isLoading("entities")}
+                            aria-label="Entity"
+                            aria-busy={isLoading("entities")}
+                            aria-describedby={fieldErrors["entities"] ? "field-error-entities" : undefined}
                             size="small"
                         >
                             {entities.map((entity) => (
@@ -773,12 +813,16 @@ export function MetadataSelector({
                                 </Option>
                             ))}
                         </Dropdown>
+                        {renderFieldError("entities")}
                     </div>
 
                     <div className={styles.field}>
-                        <InfoLabel size="medium" info="The local choice (picklist) field on the selected table to edit.">
-                            Attribute {isLoading("attributes") || isLoading("localChoice") ? <Spinner size="tiny" /> : null}
-                        </InfoLabel>
+                        <div className={styles.labelRow}>
+                            <InfoLabel size="medium" info="The local choice (picklist) field on the selected table to edit.">
+                                Attribute
+                            </InfoLabel>
+                            {(isLoading("attributes") || isLoading("localChoice")) && <Spinner size="tiny" />}
+                        </div>
                         <div className={styles.fieldRow}>
                             <Dropdown
                                 className={styles.fieldInput}
@@ -788,6 +832,9 @@ export function MetadataSelector({
                                 selectedOptions={selection.attributeLogicalName ? [selection.attributeLogicalName] : []}
                                 onOptionSelect={handleAttributeChange}
                                 disabled={isLoading("attributes") || !selection.entityLogicalName}
+                                aria-label="Attribute"
+                                aria-busy={isLoading("attributes") || isLoading("localChoice")}
+                                aria-describedby={fieldErrors["attributes"] ? "field-error-attributes" : undefined}
                                 size="small"
                             >
                                 {attributes.map((attr) => (
@@ -807,6 +854,7 @@ export function MetadataSelector({
                                 />
                             )}
                         </div>
+                        {renderFieldError("attributes")}
                     </div>
                 </>
             )}

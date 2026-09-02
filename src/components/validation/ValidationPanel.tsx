@@ -18,7 +18,7 @@ const useStyles = makeStyles({
         backgroundColor: tokens.colorPaletteRedBackground1,
         display: "flex",
         flexDirection: "column",
-        gap: tokens.spacingVerticalS,
+        gap: tokens.spacingVerticalXS,
     },
     header: {
         display: "flex",
@@ -36,7 +36,7 @@ const useStyles = makeStyles({
     issueList: {
         display: "flex",
         flexDirection: "column",
-        gap: tokens.spacingVerticalXS,
+        gap: tokens.spacingVerticalXXS,
     },
     issue: {
         display: "flex",
@@ -116,7 +116,11 @@ export function ValidationPanel({ issues, onDismiss, onIssueClick, panelRef }: V
                         }}
                     >
                         <div className={styles.issueRow}>
-                            {issue.severity === "error" ? <ErrorCircleRegular className={mergeClasses(styles.icon, styles.iconError)} /> : <WarningRegular className={mergeClasses(styles.icon, styles.iconWarning)} />}
+                            {issue.severity === "error" ? (
+                                <ErrorCircleRegular className={mergeClasses(styles.icon, styles.iconError)} />
+                            ) : (
+                                <WarningRegular className={mergeClasses(styles.icon, styles.iconWarning)} />
+                            )}
                             <div>
                                 <span className={styles.message}>{issue.message}</span>
                                 {issue.fieldPath && <span className={styles.path}> — {issue.fieldPath}</span>}

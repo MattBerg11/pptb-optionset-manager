@@ -1,4 +1,5 @@
-import { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, makeStyles } from "@fluentui/react-components";
+import { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, makeStyles, tokens } from "@fluentui/react-components";
+import { WarningRegular } from "@fluentui/react-icons";
 import type { ReactNode } from "react";
 
 interface ConfirmDialogProps {
@@ -16,6 +17,12 @@ const useStyles = makeStyles({
     surface: {
         maxWidth: "480px",
         width: "90vw",
+    },
+    dangerButton: {
+        backgroundColor: tokens.colorStatusDangerBackground3,
+        color: tokens.colorNeutralForegroundInverted,
+        ":hover": { backgroundColor: tokens.colorStatusDangerBackground3, opacity: 0.9 },
+        ":active": { backgroundColor: tokens.colorStatusDangerBackground3, opacity: 0.8 },
     },
 });
 
@@ -38,7 +45,12 @@ export function ConfirmDialog({
                     <DialogTitle>{title}</DialogTitle>
                     <DialogContent>{message}</DialogContent>
                     <DialogActions>
-                        <Button appearance={confirmIntent === "danger" ? "primary" : "secondary"} onClick={() => void onConfirm()}>
+                        <Button
+                            appearance={confirmIntent === "danger" ? "primary" : "secondary"}
+                            icon={confirmIntent === "danger" ? <WarningRegular /> : undefined}
+                            className={confirmIntent === "danger" ? styles.dangerButton : undefined}
+                            onClick={() => void onConfirm()}
+                        >
                             {confirmLabel}
                         </Button>
                         <Button appearance="secondary" onClick={onCancel}>

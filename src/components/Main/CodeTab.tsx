@@ -28,6 +28,8 @@ interface CodeMirrorEditorProps {
     lineNumbers: boolean;
     theme: "dark" | "light";
     className?: string;
+    ariaLabel?: string;
+    ariaDescribedBy?: string;
 }
 
 function getLanguageExtension(language: string): Extension {
@@ -43,7 +45,7 @@ function getLanguageExtension(language: string): Extension {
     }
 }
 
-function CodeMirrorEditor({ code, onChange, readOnly, language, lineNumbers: showLineNumbers, theme, className }: CodeMirrorEditorProps): JSX.Element {
+function CodeMirrorEditor({ code, onChange, readOnly, language, lineNumbers: showLineNumbers, theme, className, ariaLabel, ariaDescribedBy }: CodeMirrorEditorProps): JSX.Element {
     const containerRef = useRef<HTMLDivElement>(null);
     const editorRef = useRef<EditorView | null>(null);
     const lineNumbersCompartment = useRef(new Compartment()).current;
@@ -134,7 +136,7 @@ function CodeMirrorEditor({ code, onChange, readOnly, language, lineNumbers: sho
         });
     }, [theme, themeCompartment]);
 
-    return <div ref={containerRef} className={className} />;
+    return <div ref={containerRef} className={className} aria-label={ariaLabel} aria-describedby={ariaDescribedBy} />;
 }
 
 type OutputFormat = "json" | "typescript" | "javascript" | "csharp" | "csv";
@@ -274,6 +276,8 @@ export function CodeTab({ codeText, codeError, onCodeChange, onApplyCode, draft,
     const language = outputFormat === "csharp" ? "csharp" : outputFormat;
     const lineCount = displayedCode.length > 0 ? displayedCode.split(/\r?\n/).length : 0;
     const charCount = displayedCode.length;
+    const editorAriaLabel = `Code editor \u2014 ${FORMAT_LABELS[outputFormat]}${isEditableMode ? "" : ", read-only"}`;
+    const readonlyNoteId = "code-editor-readonly-note";
 
     const handleExport = async (): Promise<void> => {
         const ext = outputFormat === "csharp" ? "cs" : outputFormat === "csv" ? "csv" : outputFormat === "typescript" ? "ts" : outputFormat === "javascript" ? "js" : "json";
@@ -331,7 +335,7 @@ export function CodeTab({ codeText, codeError, onCodeChange, onApplyCode, draft,
                             Apply to Builder
                         </Button>
                     ) : (
-                        <span className={styles.readonlyNote}>Read-only — edit in Builder tab</span>
+                        <span id={readonlyNoteId} className={styles.readonlyNote}>Read-only \u2014 edit in Builder tab</span>
                     )}
                     <Button appearance="subtle" size="small" icon={<ArrowDownloadRegular />} onClick={() => void handleExport()} title="Export to file" aria-label="Export to file">
                         Export
@@ -350,6 +354,8 @@ export function CodeTab({ codeText, codeError, onCodeChange, onApplyCode, draft,
                     lineNumbers={showLineNumbers}
                     theme={isDarkTheme ? "dark" : "light"}
                     className={styles.codeEditor}
+                    ariaLabel={editorAriaLabel}
+                    ariaDescribedBy={!isEditableMode ? readonlyNoteId : undefined}
                 />
                 {showCopyButton && (
                     <Button appearance="subtle" size="small" onClick={() => void handleCopy()} aria-label="Copy generated code">

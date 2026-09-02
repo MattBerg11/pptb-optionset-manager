@@ -30,6 +30,7 @@ export function OptionMetadataPopover({ styles, externalKey, hidden, onExternalK
                 />
                 <Field label="External value" className={styles.metadataField}>
                     <Input
+                        id="option-external-value"
                         size="small"
                         placeholder="External value"
                         value={externalKey ?? ""}

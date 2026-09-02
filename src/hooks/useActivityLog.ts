@@ -4,7 +4,7 @@ export interface ActivityEntry {
     id: string;
     message: string;
     timestamp: Date;
-    type: "info" | "success" | "error";
+    type: "added" | "removed" | "changed" | "loaded" | "reset";
 }
 
 const MAX_ENTRIES = 50;

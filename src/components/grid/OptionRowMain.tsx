@@ -1,4 +1,4 @@
-import { Button, Input, mergeClasses } from "@fluentui/react-components";
+import { Button, Input, Tooltip, mergeClasses } from "@fluentui/react-components";
 import { ChevronDownRegular, ChevronRightRegular, DeleteRegular, ReOrderDotsVerticalRegular } from "@fluentui/react-icons";
 import { useRef } from "react";
 import { MAX_OPTION_VALUE, MIN_OPTION_VALUE } from "../../constants";
@@ -23,6 +23,8 @@ interface OptionRowMainProps {
     setDragOverRowId: (value: string | null) => void;
     onReorderRows: (fromIndex: number, toIndex: number) => void;
     hideAdvancedProperties?: boolean;
+    isDirty?: boolean;
+    reorderingEnabled?: boolean;
 }
 
 export function OptionRowMain({
@@ -43,6 +45,8 @@ export function OptionRowMain({
     setDragOverRowId,
     onReorderRows,
     hideAdvancedProperties,
+    isDirty,
+    reorderingEnabled,
 }: OptionRowMainProps): JSX.Element {
     const defaultLabel = row.labels.find((entry) => entry.languageCode === defaultLanguageCode) ?? row.labels[0];
     const colorInputRef = useRef<HTMLInputElement>(null);
@@ -52,14 +56,16 @@ export function OptionRowMain({
         <tr
             id={`row-${row.rowId}`}
             className={mergeClasses(
+                isDirty ? styles.rowDirty : "",
                 hasMainRowError(row.rowId) ? styles.rowError : "",
                 apiSuccessRowIds?.has(row.rowId) ? styles.rowSuccess : "",
                 dragOverRowId === row.rowId ? styles.dragOverRow : ""
             )}
             tabIndex={0}
-            draggable={true}
+            draggable={reorderingEnabled === true}
             aria-label={`Option row: ${defaultLabel?.label || "Unnamed"}, value ${row.optionValue ?? "not set"}`}
             onKeyDown={(event) => {
+                if (!reorderingEnabled) return;
                 const index = rows.indexOf(row);
                 if (event.altKey && event.key === "ArrowUp" && index > 0) {
                     event.preventDefault();
@@ -71,6 +77,7 @@ export function OptionRowMain({
                 }
             }}
             onDragStart={(event) => {
+                if (!reorderingEnabled) return;
                 setDraggingRowId(row.rowId);
                 event.dataTransfer.effectAllowed = "move";
             }}
@@ -96,15 +103,15 @@ export function OptionRowMain({
             }}
         >
             {/* Reorder handle cell */}
-            <td className={mergeClasses(styles.td, styles.dragCell)}>
-                <button
-                    className={styles.dragHandle}
-                    aria-roledescription="reorder handle"
-                    aria-label={`Reorder "${defaultLabel?.label || "option"}"; drag or use Alt+Up/Down`}
-                >
-                    <ReOrderDotsVerticalRegular />
-                </button>
-            </td>
+            {reorderingEnabled && (
+                <td className={mergeClasses(styles.td, styles.dragCell)}>
+                    <Tooltip content="Drag to reorder \u00b7 Alt+\u2191/\u2193 to move with keyboard" relationship="description">
+                        <button className={styles.dragHandle} aria-roledescription="reorder handle" aria-label={`Reorder "${defaultLabel?.label || "option"}"; drag or use Alt+Up/Down`}>
+                            <ReOrderDotsVerticalRegular />
+                        </button>
+                    </Tooltip>
+                </td>
+            )}
             {/* Chevron cell */}
             <td className={mergeClasses(styles.td, styles.chevronCell)}>
                 {!singleLanguageMode && (

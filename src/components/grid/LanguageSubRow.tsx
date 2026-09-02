@@ -18,6 +18,7 @@ interface LanguageSubRowProps {
     onUpdateLanguageDescription: (rowId: string, languageCode: number, description: string) => void;
     onUpdateLanguageHidden: (rowId: string, languageCode: number, hidden: boolean) => void;
     onRemoveLanguage: (rowId: string, languageCode: number) => void;
+    reorderingEnabled?: boolean;
 }
 
 export function LanguageSubRow({
@@ -33,6 +34,7 @@ export function LanguageSubRow({
     onUpdateLanguageDescription,
     onUpdateLanguageHidden,
     onRemoveLanguage,
+    reorderingEnabled,
 }: LanguageSubRowProps): JSX.Element {
     // Only show language-change button when there are other available codes to switch to
     const canChangeLang = availableLanguageCodes.some((c) => c !== langEntry.languageCode && !existingLanguageCodes.includes(c));
@@ -40,7 +42,7 @@ export function LanguageSubRow({
 
     return (
         <tr key={`${row.rowId}-lang-${langEntry.languageCode}`} className={mergeClasses(styles.languageSubrow, hasLanguageRowError(row.rowId, langEntry.languageCode) ? styles.languageRowError : "")}>
-            <td className={styles.td} />
+            {reorderingEnabled && <td className={styles.td} />}
             <td className={mergeClasses(styles.td, styles.chevronCell)}>
                 {canChangeLang ? (
                     <LanguageMenu

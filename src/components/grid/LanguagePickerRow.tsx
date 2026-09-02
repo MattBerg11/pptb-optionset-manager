@@ -8,6 +8,7 @@ interface LanguagePickerRowProps {
     existingLanguageCodes: number[];
     onAddLanguage: (rowId: string, languageCode: number) => void;
     sortLanguagesByCode: boolean;
+    reorderingEnabled?: boolean;
 }
 
 export function LanguagePickerRow({
@@ -17,12 +18,13 @@ export function LanguagePickerRow({
     existingLanguageCodes,
     onAddLanguage,
     sortLanguagesByCode,
+    reorderingEnabled,
 }: LanguagePickerRowProps): JSX.Element {
     const remainingCodes = availableLanguageCodes.filter((c) => !existingLanguageCodes.includes(c));
 
     return (
         <tr className={styles.languageAddRow}>
-            <td className={styles.td} colSpan={6}>
+            <td className={styles.td} colSpan={reorderingEnabled ? 6 : 5}>
                 {remainingCodes.length === 0 ? (
                     <div className={styles.addLanguageContainer}>
                         <span className={styles.secondaryText}>No additional languages are available in this environment.</span>

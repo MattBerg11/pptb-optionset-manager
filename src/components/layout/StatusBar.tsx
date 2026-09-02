@@ -1,5 +1,4 @@
-import { makeStyles, Spinner, tokens } from "@fluentui/react-components";
-import { PlugConnectedRegular, PlugDisconnectedRegular } from "@fluentui/react-icons";
+import { makeStyles, tokens } from "@fluentui/react-components";
 
 interface StatusBarProps {
     connection?: { name?: string; environment?: string } | null;
@@ -23,32 +22,20 @@ const useStyles = makeStyles({
         alignItems: "center",
         gap: tokens.spacingHorizontalXS,
     },
-    connectionIconConnected: {
-        color: tokens.colorPaletteGreenForeground1,
-        fontSize: "16px",
-    },
-    connectionIconDisconnected: {
-        color: tokens.colorNeutralForeground3,
-        fontSize: "16px",
+    rowCountItem: {
+        display: "flex",
+        alignItems: "center",
+        gap: tokens.spacingHorizontalXS,
+        marginLeft: "auto",
     },
 });
 
-export function StatusBar({ connection, isLoading, connectionText, rowCount }: StatusBarProps): JSX.Element {
+export function StatusBar({ rowCount }: StatusBarProps): JSX.Element {
     const styles = useStyles();
 
     return (
         <footer className={styles.statusBar}>
-            <div className={styles.statusItem}>
-                {connection ? (
-                    <PlugConnectedRegular className={styles.connectionIconConnected} />
-                ) : isLoading ? (
-                    <Spinner size="tiny" />
-                ) : (
-                    <PlugDisconnectedRegular className={styles.connectionIconDisconnected} />
-                )}
-                <span>{connectionText}</span>
-            </div>
-            <div className={styles.statusItem}>
+            <div className={styles.rowCountItem}>
                 <span>{rowCount} rows</span>
             </div>
         </footer>

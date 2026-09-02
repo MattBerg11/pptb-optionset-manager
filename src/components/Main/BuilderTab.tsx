@@ -22,6 +22,8 @@ interface BuilderTabProps {
     validateBlankTranslationRows?: boolean;
     autoAddAllLanguages?: boolean;
     autoAddEnglishSubrow?: boolean;
+    dirtyRowIds?: ReadonlySet<string>;
+    reorderingAlwaysOn?: boolean;
 }
 
 export function BuilderTab({
@@ -45,6 +47,8 @@ export function BuilderTab({
     validateBlankTranslationRows,
     autoAddAllLanguages,
     autoAddEnglishSubrow,
+    dirtyRowIds,
+    reorderingAlwaysOn,
 }: BuilderTabProps): JSX.Element {
     const isLoaded = draft.operation === "update";
 
@@ -72,6 +76,8 @@ export function BuilderTab({
             validateBlankTranslationRows={validateBlankTranslationRows}
             autoAddAllLanguages={autoAddAllLanguages}
             autoAddEnglishSubrow={autoAddEnglishSubrow}
+            dirtyRowIds={dirtyRowIds}
+            reorderingAlwaysOn={reorderingAlwaysOn}
         />
     );
 }
