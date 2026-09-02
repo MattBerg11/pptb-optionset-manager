@@ -1,15 +1,13 @@
-import { Button, Checkbox, Field, Input, Popover, PopoverSurface, PopoverTrigger } from "@fluentui/react-components";
+import { Button, Field, Input, Popover, PopoverSurface, PopoverTrigger } from "@fluentui/react-components";
 import { SettingsRegular } from "@fluentui/react-icons";
 
 interface OptionMetadataPopoverProps {
     styles: Record<string, string>;
     externalKey: string | undefined;
-    hidden: boolean | undefined;
     onExternalKeyChange: (value: string) => void;
-    onHiddenChange: (value: boolean) => void;
 }
 
-export function OptionMetadataPopover({ styles, externalKey, hidden, onExternalKeyChange, onHiddenChange }: OptionMetadataPopoverProps): JSX.Element {
+export function OptionMetadataPopover({ styles, externalKey, onExternalKeyChange }: OptionMetadataPopoverProps): JSX.Element {
     return (
         <Popover positioning={{ position: "below", align: "start" }}>
             <PopoverTrigger disableButtonEnhancement>
@@ -23,11 +21,6 @@ export function OptionMetadataPopover({ styles, externalKey, hidden, onExternalK
                 />
             </PopoverTrigger>
             <PopoverSurface className={styles.metadataPopover}>
-                <Checkbox
-                    label="Hidden"
-                    checked={!!hidden}
-                    onChange={(_, data) => onHiddenChange(!!data.checked)}
-                />
                 <Field label="External value" className={styles.metadataField}>
                     <Input
                         id="option-external-value"
