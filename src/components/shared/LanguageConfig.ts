@@ -66,10 +66,6 @@ export const useFlagStyles = makeStyles({
     },
 });
 
-export const DEFAULT_LANGUAGE_CODE = 1033;
-export const DEFAULT_SORT_LANGUAGES_BY_CODE = false;
-export const DEFAULT_VISIBLE_LANGUAGE_CODES: number[] = [1033, 1036, 1031];
-
 export interface LanguageConfig {
     code: number;
     name: string;

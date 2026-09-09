@@ -1,5 +1,5 @@
 import { mergeClasses } from "@fluentui/react-components";
-import { getLanguageByCode, useFlagStyles } from "./languageConfig";
+import { getLanguageByCode, useFlagStyles } from "./LanguageConfig";
 
 export function LanguageFlag({ code, title, className }: { code: number; title?: string; className?: string }): JSX.Element {
     const styles = useFlagStyles();

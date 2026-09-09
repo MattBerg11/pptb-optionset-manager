@@ -1,9 +1,10 @@
-import { Button, Checkbox, Input, mergeClasses } from "@fluentui/react-components";
+import { Button, Input, mergeClasses } from "@fluentui/react-components";
 import { DeleteRegular } from "@fluentui/react-icons";
-import type { LanguageEntry, OptionDraftRow } from "../../models/optionSetModels";
-import { LanguageMenu } from "../common/LanguageCodeDropdown";
-import { LanguageFlag } from "../languages/LanguageFlag";
-import { getLanguageByCode } from "../languages/languageConfig";
+import { memo } from "react";
+import type { LanguageEntry, OptionDraftRow } from "../../../models/optionSetModels";
+import { LanguageMenu } from "../../shared/LanguageCodeDropdown";
+import { LanguageFlag } from "../../shared/LanguageFlag";
+import { getLanguageByCode } from "../../shared/LanguageConfig";
 
 interface LanguageSubRowProps {
     row: OptionDraftRow;
@@ -12,27 +13,25 @@ interface LanguageSubRowProps {
     existingLanguageCodes: number[];
     availableLanguageCodes: number[];
     sortLanguagesByCode: boolean;
-    hasLanguageRowError: (rowId: string, languageCode: number) => boolean;
+    isError: boolean;
     onUpdateRow: (rowId: string, updater: (row: OptionDraftRow) => OptionDraftRow) => void;
     onUpdateLanguageLabel: (rowId: string, languageCode: number, label: string) => void;
     onUpdateLanguageDescription: (rowId: string, languageCode: number, description: string) => void;
-    onUpdateLanguageHidden: (rowId: string, languageCode: number, hidden: boolean) => void;
     onRemoveLanguage: (rowId: string, languageCode: number) => void;
     reorderingEnabled?: boolean;
 }
 
-export function LanguageSubRow({
+export const LanguageSubRow = memo(function LanguageSubRow({
     row,
     langEntry,
     styles,
     existingLanguageCodes,
     availableLanguageCodes,
     sortLanguagesByCode,
-    hasLanguageRowError,
+    isError,
     onUpdateRow,
     onUpdateLanguageLabel,
     onUpdateLanguageDescription,
-    onUpdateLanguageHidden,
     onRemoveLanguage,
     reorderingEnabled,
 }: LanguageSubRowProps): JSX.Element {
@@ -41,9 +40,8 @@ export function LanguageSubRow({
     const langName = getLanguageByCode(langEntry.languageCode)?.name ?? `Language ${langEntry.languageCode}`;
 
     return (
-        <tr key={`${row.rowId}-lang-${langEntry.languageCode}`} className={mergeClasses(styles.languageSubrow, hasLanguageRowError(row.rowId, langEntry.languageCode) ? styles.languageRowError : "")}>
-            {reorderingEnabled && <td className={styles.td} />}
-            <td className={mergeClasses(styles.td, styles.chevronCell)}>
+        <tr key={`${row.rowId}-lang-${langEntry.languageCode}`} className={mergeClasses(styles.languageSubrow, isError ? styles.languageRowError : "")}>
+            <td colSpan={reorderingEnabled ? 3 : 2} className={mergeClasses(styles.td, styles.chevronCell)}>
                 {canChangeLang ? (
                     <LanguageMenu
                         trigger={
@@ -63,7 +61,6 @@ export function LanguageSubRow({
                                     languageCode: newCode,
                                     label: langEntry.label,
                                     description: langEntry.description ?? "",
-                                    hidden: langEntry.hidden,
                                 });
                                 return { ...current, labels };
                             });
@@ -103,12 +100,6 @@ export function LanguageSubRow({
             </td>
             <td className={mergeClasses(styles.td, styles.actionCell)}>
                 <div className={styles.actionButtons}>
-                    <Checkbox
-                        checked={langEntry.hidden ?? false}
-                        onChange={(_, data) => onUpdateLanguageHidden(row.rowId, langEntry.languageCode, data.checked === true)}
-                        title="Hide this translation"
-                        aria-label="Hide this translation"
-                    />
                     <Button
                         appearance="subtle"
                         size="small"
@@ -121,4 +112,4 @@ export function LanguageSubRow({
             </td>
         </tr>
     );
-}
+});

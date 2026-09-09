@@ -1,7 +1,7 @@
 import { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, InfoLabel, Input, Spinner, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { PlugDisconnectedRegular } from "@fluentui/react-icons";
 import type ToolBoxAPI from "@pptb/types/toolboxAPI";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { DataverseMetadataService } from "../../api/dataverseMetadata";
 import type { ActivityEntry } from "../../hooks/useActivityLog";
 import type { MetadataSelection } from "../../models/metadataModels";
@@ -235,12 +235,19 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
         draft.scope === "local" ||
         draft.operation === "update";
 
-    const isFormDirty =
-        draft.displayName.trim().length > 0 ||
-        draft.optionSetSchemaName.trim().length > 0 ||
-        draft.description.trim().length > 0 ||
-        draft.rows.length > 1 ||
-        draft.rows.some((row) => (row.externalKey?.trim().length ?? 0) > 0 || row.labels.some((label) => label.label.trim().length > 0 || (label.description?.trim().length ?? 0) > 0));
+    const isFormDirty = useMemo(
+        () =>
+            draft.displayName.trim().length > 0 ||
+            draft.optionSetSchemaName.trim().length > 0 ||
+            draft.description.trim().length > 0 ||
+            draft.rows.length > 1 ||
+            draft.rows.some(
+                (row) =>
+                    (row.externalKey?.trim().length ?? 0) > 0 ||
+                    row.labels.some((label) => label.label.trim().length > 0 || (label.description?.trim().length ?? 0) > 0)
+            ),
+        [draft.displayName, draft.optionSetSchemaName, draft.description, draft.rows]
+    );
 
     const handleNew = (): void => {
         setShowProperties(true);

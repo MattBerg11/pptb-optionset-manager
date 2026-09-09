@@ -1,4 +1,4 @@
-import { DEFAULT_LANGUAGE_CODE } from "../components/languages/languageConfig";
+import { DEFAULT_LANGUAGE_CODE } from "../constants.ts";
 import { OptionSetOperationError } from "../errors/OptionSetErrors";
 import type { OptionDraftRow, OptionSetDraft, OptionSetOperationResult } from "../models/optionSetModels";
 
@@ -148,6 +148,8 @@ export async function upsertOptionSet(draft: OptionSetDraft, dirtyRowIds?: Reado
         };
 
         if (desc) baseParams.Description = desc;
+        if (row.externalKey) baseParams.ExternalValue = row.externalKey;
+        if (row.hidden !== undefined) baseParams.IsHidden = row.hidden;
         if (draft.solutionUniqueName) baseParams.SolutionUniqueName = draft.solutionUniqueName;
 
         if (draft.scope === "global") {

@@ -3,7 +3,7 @@ import { DismissRegular, FolderOpenRegular } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import type { DataverseMetadataService } from "../../api/dataverseMetadata";
 import type { GlobalOptionSetDetail, GlobalOptionSetSummary, OptionSetScope } from "../../models/optionSetModels";
-import { EmptyState } from "../common";
+import { EmptyState } from "../shared";
 
 const useStyles = makeStyles({
     surface: {

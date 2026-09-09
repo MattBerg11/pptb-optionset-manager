@@ -11,7 +11,7 @@ interface StatusMessageBarProps {
     actions?: ReactNode;
 }
 
-const toneStyles: Record<StatusMessageBarIntent, CSSProperties> = {
+const notificationType: Record<StatusMessageBarIntent, CSSProperties> = {
     success: {
         border: `${tokens.strokeWidthThin} solid ${tokens.colorPaletteGreenBorder2}`,
         backgroundColor: tokens.colorPaletteGreenBackground1,
@@ -44,7 +44,7 @@ export function StatusMessageBar({ intent, message, onDismiss, actions }: Status
         borderRadius: tokens.borderRadiusMedium,
         marginBottom: tokens.spacingVerticalM,
         fontSize: tokens.fontSizeBase300,
-        ...toneStyles[intent],
+        ...notificationType[intent],
     };
 
     const contentStyle: CSSProperties = {

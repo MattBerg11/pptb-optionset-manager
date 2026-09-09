@@ -1,10 +1,10 @@
 import { Button, Checkbox, Divider, Drawer, DrawerBody, DrawerHeader, DrawerHeaderTitle, Dropdown, Input, Label, Tooltip, makeStyles, Option, tokens } from "@fluentui/react-components";
 import { DismissRegular } from "@fluentui/react-icons";
 import { useState } from "react";
-import { LANGUAGE_CONFIGS, useFlagStyles } from "../languages/languageConfig";
-import { LanguageFlag } from "../languages/LanguageFlag";
+import { LANGUAGE_CONFIGS, useFlagStyles } from "../shared/LanguageConfig";
+import { LanguageFlag } from "../shared/LanguageFlag";
 import type { OptionSetManagerSettings, PrimaryLanguageMode } from "../../models/settingsModels";
-import { ConfirmDialog } from "../common";
+import { ConfirmDialog } from "../shared";
 
 const useStyles = makeStyles({
     body: {
@@ -146,8 +146,15 @@ export function SettingsPanel({ isOpen, onClose, settings, onUpdateSettings, onR
                             </div>
 
                             <div className={styles.section}>
-                                <Checkbox checked={settings.autoAddAllLanguages} onChange={(_, data) => update({ autoAddAllLanguages: !!data.checked })} label="Auto add all available languages" input={{ "aria-describedby": "desc-autoAddAllLanguages" }} />
-                                <p id="desc-autoAddAllLanguages" className={styles.checkboxDescription}>When a row is expanded, all environment languages are added as sub-rows automatically.</p>
+                                <Checkbox
+                                    checked={settings.autoAddAllLanguages}
+                                    onChange={(_, data) => update({ autoAddAllLanguages: !!data.checked })}
+                                    label="Auto add all available languages"
+                                    input={{ "aria-describedby": "desc-autoAddAllLanguages" }}
+                                />
+                                <p id="desc-autoAddAllLanguages" className={styles.checkboxDescription}>
+                                    When a row is expanded, all environment languages are added as sub-rows automatically.
+                                </p>
                             </div>
 
                             <div className={styles.section}>
@@ -236,7 +243,9 @@ export function SettingsPanel({ isOpen, onClose, settings, onUpdateSettings, onR
                                     label="Hide row level advanced properties"
                                     input={{ "aria-describedby": "desc-hideRowAdvanced" }}
                                 />
-                                <p id="desc-hideRowAdvanced" className={styles.checkboxDescription}>Hides the gear icon on each row.</p>
+                                <p id="desc-hideRowAdvanced" className={styles.checkboxDescription}>
+                                    Hides the gear icon on each row.
+                                </p>
                             </div>
 
                             <div className={styles.section}>
@@ -254,7 +263,9 @@ export function SettingsPanel({ isOpen, onClose, settings, onUpdateSettings, onR
                                     label="Auto add all languages when adding a new row"
                                     input={{ "aria-describedby": "desc-autoAddOnAdd" }}
                                 />
-                                <p id="desc-autoAddOnAdd" className={styles.checkboxDescription}>Adds all environment languages to the row without expanding sub-rows.</p>
+                                <p id="desc-autoAddOnAdd" className={styles.checkboxDescription}>
+                                    Adds all environment languages to the row without expanding sub-rows.
+                                </p>
                             </div>
 
                             <div className={styles.section}>
@@ -264,7 +275,9 @@ export function SettingsPanel({ isOpen, onClose, settings, onUpdateSettings, onR
                                     label="Always show row reorder controls"
                                     input={{ "aria-describedby": "desc-reorderingAlwaysOn" }}
                                 />
-                                <p id="desc-reorderingAlwaysOn" className={styles.checkboxDescription}>When off, a toggle button in the grid header enables reordering on demand.</p>
+                                <p id="desc-reorderingAlwaysOn" className={styles.checkboxDescription}>
+                                    When off, a toggle button in the grid header enables reordering on demand.
+                                </p>
                             </div>
                         </div>
 
@@ -275,8 +288,15 @@ export function SettingsPanel({ isOpen, onClose, settings, onUpdateSettings, onR
                             <span className={styles.groupTitle}>Code Generation</span>
 
                             <div className={styles.section}>
-                                <Checkbox checked={settings.autoGenerateCode} onChange={(_, data) => update({ autoGenerateCode: !!data.checked })} label="Auto-generate code" input={{ "aria-describedby": "desc-autoGenCode" }} />
-                                <p id="desc-autoGenCode" className={styles.checkboxDescription}>Regenerate the Code tab automatically when the builder changes.</p>
+                                <Checkbox
+                                    checked={settings.autoGenerateCode}
+                                    onChange={(_, data) => update({ autoGenerateCode: !!data.checked })}
+                                    label="Auto-generate code"
+                                    input={{ "aria-describedby": "desc-autoGenCode" }}
+                                />
+                                <p id="desc-autoGenCode" className={styles.checkboxDescription}>
+                                    Regenerate the Code tab automatically when the builder changes.
+                                </p>
                             </div>
 
                             {settings.autoGenerateCode && (

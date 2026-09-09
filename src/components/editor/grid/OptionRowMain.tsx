@@ -1,48 +1,50 @@
 import { Button, Input, Tooltip, mergeClasses } from "@fluentui/react-components";
 import { ChevronDownRegular, ChevronRightRegular, DeleteRegular, ReOrderDotsVerticalRegular } from "@fluentui/react-icons";
-import { useRef } from "react";
-import { MAX_OPTION_VALUE, MIN_OPTION_VALUE } from "../../constants";
-import type { OptionDraftRow } from "../../models/optionSetModels";
+import { memo, useRef } from "react";
+import { MAX_OPTION_VALUE, MIN_OPTION_VALUE } from "../../../constants";
+import type { OptionDraftRow } from "../../../models/optionSetModels";
 import { OptionMetadataPopover } from "./OptionMetadataPopover";
 
 interface OptionRowMainProps {
     row: OptionDraftRow;
-    rows: OptionDraftRow[];
+    rowIndex: number;
+    rowCount: number;
     defaultLanguageCode: number;
     styles: Record<string, string>;
     isExpanded: boolean;
     singleLanguageMode?: boolean;
-    hasMainRowError: (rowId: string) => boolean;
-    apiSuccessRowIds?: ReadonlySet<string>;
-    draggingRowId: string | null;
-    dragOverRowId: string | null;
+    isError: boolean;
+    isApiSuccess: boolean;
+    isDragOver: boolean;
+    draggingIndex: number | null;
     onUpdateRow: (rowId: string, updater: (row: OptionDraftRow) => OptionDraftRow) => void;
     onRemoveRow: (rowId: string) => void;
     toggleRowExpansion: (rowId: string) => void;
-    setDraggingRowId: (value: string | null) => void;
-    setDragOverRowId: (value: string | null) => void;
+    setDraggingIndex: (value: number | null) => void;
+    setDragOverIndex: (value: number | null) => void;
     onReorderRows: (fromIndex: number, toIndex: number) => void;
     hideAdvancedProperties?: boolean;
     isDirty?: boolean;
     reorderingEnabled?: boolean;
 }
 
-export function OptionRowMain({
+export const OptionRowMain = memo(function OptionRowMain({
     row,
-    rows,
+    rowIndex,
+    rowCount,
     defaultLanguageCode,
     styles,
     isExpanded,
     singleLanguageMode,
-    hasMainRowError,
-    apiSuccessRowIds,
-    draggingRowId,
-    dragOverRowId,
+    isError,
+    isApiSuccess,
+    isDragOver,
+    draggingIndex,
     onUpdateRow,
     onRemoveRow,
     toggleRowExpansion,
-    setDraggingRowId,
-    setDragOverRowId,
+    setDraggingIndex,
+    setDragOverIndex,
     onReorderRows,
     hideAdvancedProperties,
     isDirty,
@@ -50,56 +52,46 @@ export function OptionRowMain({
 }: OptionRowMainProps): JSX.Element {
     const defaultLabel = row.labels.find((entry) => entry.languageCode === defaultLanguageCode) ?? row.labels[0];
     const colorInputRef = useRef<HTMLInputElement>(null);
-    const showDelete = rows.length > 1;
+    const showDelete = rowCount > 1;
 
     return (
         <tr
             id={`row-${row.rowId}`}
-            className={mergeClasses(
-                isDirty ? styles.rowDirty : "",
-                hasMainRowError(row.rowId) ? styles.rowError : "",
-                apiSuccessRowIds?.has(row.rowId) ? styles.rowSuccess : "",
-                dragOverRowId === row.rowId ? styles.dragOverRow : ""
-            )}
+            className={mergeClasses(isDirty ? styles.rowDirty : "", isError ? styles.rowError : "", isApiSuccess ? styles.rowSuccess : "", isDragOver ? styles.dragOverRow : "")}
             tabIndex={0}
             draggable={reorderingEnabled === true}
             aria-label={`Option row: ${defaultLabel?.label || "Unnamed"}, value ${row.optionValue ?? "not set"}`}
             onKeyDown={(event) => {
                 if (!reorderingEnabled) return;
-                const index = rows.indexOf(row);
-                if (event.altKey && event.key === "ArrowUp" && index > 0) {
+                if (event.altKey && event.key === "ArrowUp" && rowIndex > 0) {
                     event.preventDefault();
-                    onReorderRows(index, index - 1);
+                    onReorderRows(rowIndex, rowIndex - 1);
                 }
-                if (event.altKey && event.key === "ArrowDown" && index < rows.length - 1) {
+                if (event.altKey && event.key === "ArrowDown" && rowIndex < rowCount - 1) {
                     event.preventDefault();
-                    onReorderRows(index, index + 1);
+                    onReorderRows(rowIndex, rowIndex + 1);
                 }
             }}
             onDragStart={(event) => {
                 if (!reorderingEnabled) return;
-                setDraggingRowId(row.rowId);
+                setDraggingIndex(rowIndex);
                 event.dataTransfer.effectAllowed = "move";
             }}
             onDragOver={(event) => {
                 event.preventDefault();
-                if (row.rowId !== "") {
-                    setDragOverRowId(row.rowId);
-                }
+                setDragOverIndex(rowIndex);
             }}
             onDrop={(event) => {
                 event.preventDefault();
-                const dragIndex = draggingRowId ? rows.findIndex((entry) => entry.rowId === draggingRowId) : -1;
-                const targetIndex = rows.findIndex((entry) => entry.rowId === row.rowId);
-                if (dragIndex !== -1 && targetIndex !== -1 && dragIndex !== targetIndex) {
-                    onReorderRows(dragIndex, targetIndex);
+                if (draggingIndex !== null && draggingIndex !== rowIndex) {
+                    onReorderRows(draggingIndex, rowIndex);
                 }
-                setDraggingRowId(null);
-                setDragOverRowId(null);
+                setDraggingIndex(null);
+                setDragOverIndex(null);
             }}
             onDragEnd={() => {
-                setDraggingRowId(null);
-                setDragOverRowId(null);
+                setDraggingIndex(null);
+                setDragOverIndex(null);
             }}
         >
             {/* Reorder handle cell */}
@@ -126,61 +118,61 @@ export function OptionRowMain({
                     />
                 )}
             </td>
+            {/* Color cell */}
+            <td className={mergeClasses(styles.td, styles.colorCell)}>
+                <button
+                    className={styles.colorSwatch}
+                    style={{ backgroundColor: row.color ?? undefined }}
+                    onClick={() => colorInputRef.current?.click()}
+                    title={row.color ? `Row color: ${row.color}. Click to change` : "Set row color"}
+                    aria-label={row.color ? `Row color: ${row.color}. Click to change` : "Set row color"}
+                    type="button"
+                />
+                <input
+                    ref={colorInputRef}
+                    type="color"
+                    value={row.color ?? ""}
+                    onChange={(event) => {
+                        const color = (event.target as HTMLInputElement).value;
+                        onUpdateRow(row.rowId, (current) => ({ ...current, color }));
+                    }}
+                    className={styles.colorInput}
+                    aria-hidden="true"
+                    tabIndex={-1}
+                />
+            </td>
             {/* label cell */}
             <td className={mergeClasses(styles.td, styles.labelColumn)}>
-                <div className={styles.labelCell}>
-                    {/* Color swatch */}
-                    <button
-                        className={styles.colorSwatch}
-                        style={{ backgroundColor: row.color ?? undefined }}
-                        onClick={() => colorInputRef.current?.click()}
-                        title={row.color ? `Row color: ${row.color}. Click to change` : "Set row color"}
-                        aria-label={row.color ? `Row color: ${row.color}. Click to change` : "Set row color"}
-                        type="button"
-                    />
-                    <input
-                        ref={colorInputRef}
-                        type="color"
-                        value={row.color ?? ""}
-                        onChange={(event) => {
-                            const color = (event.target as HTMLInputElement).value;
-                            onUpdateRow(row.rowId, (current) => ({ ...current, color }));
-                        }}
-                        className={styles.colorInput}
-                        aria-hidden="true"
-                        tabIndex={-1}
-                    />
-                    <Input
-                        type="text"
-                        size="small"
-                        value={defaultLabel?.label ?? ""}
-                        className={styles.inputFlex}
-                        style={{ width: "100%" }}
-                        aria-label="Label"
-                        onChange={(event) => {
-                            onUpdateRow(row.rowId, (current) => {
-                                const labels = [...current.labels];
-                                const targetIndex = labels.findIndex((entry) => entry.languageCode === defaultLanguageCode);
-                                if (targetIndex >= 0) {
-                                    labels[targetIndex] = {
-                                        ...labels[targetIndex],
-                                        label: (event.target as HTMLInputElement).value,
-                                    };
-                                } else {
-                                    labels.push({
-                                        languageCode: defaultLanguageCode,
-                                        label: (event.target as HTMLInputElement).value,
-                                        description: "",
-                                    });
-                                }
-                                return {
-                                    ...current,
-                                    labels,
+                <Input
+                    type="text"
+                    size="small"
+                    value={defaultLabel?.label ?? ""}
+                    className={styles.inputFlex}
+                    style={{ width: "100%" }}
+                    aria-label="Label"
+                    onChange={(event) => {
+                        onUpdateRow(row.rowId, (current) => {
+                            const labels = [...current.labels];
+                            const targetIndex = labels.findIndex((entry) => entry.languageCode === defaultLanguageCode);
+                            if (targetIndex >= 0) {
+                                labels[targetIndex] = {
+                                    ...labels[targetIndex],
+                                    label: (event.target as HTMLInputElement).value,
                                 };
-                            });
-                        }}
-                    />
-                </div>
+                            } else {
+                                labels.push({
+                                    languageCode: defaultLanguageCode,
+                                    label: (event.target as HTMLInputElement).value,
+                                    description: "",
+                                });
+                            }
+                            return {
+                                ...current,
+                                labels,
+                            };
+                        });
+                    }}
+                />
             </td>
             {/* value column */}
             <td className={mergeClasses(styles.td, styles.valueColumn)}>
@@ -253,4 +245,4 @@ export function OptionRowMain({
             </td>
         </tr>
     );
-}
+});

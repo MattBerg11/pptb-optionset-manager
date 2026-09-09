@@ -1,8 +1,9 @@
 import { Button, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { ChevronDownRegular, ChevronRightRegular } from "@fluentui/react-icons";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useMemo, useRef, useState } from "react";
 import type { OptionDraftRow, ValidationIssue } from "../../models/optionSetModels";
-import { LanguagePickerRow, LanguageSubRow, OptionRowMain } from "../grid";
+import { LanguagePickerRow, LanguageSubRow, OptionRowMain } from "../editor/grid";
+import { useRowAutoExpand } from "../../hooks/useRowAutoExpand";
 
 const VIRTUAL_THRESHOLD = 50;
 const OVERSCAN = 8;
@@ -62,6 +63,10 @@ const useStyles = makeStyles({
         paddingInline: "0",
         textAlign: "center",
     },
+    colorCell: {
+        paddingInline: tokens.spacingHorizontalXXS,
+        textAlign: "center",
+    },
     columnProps: {
         width: "auto",
     },
@@ -95,7 +100,7 @@ const useStyles = makeStyles({
         flexShrink: 0,
         minWidth: "24px",
         width: "24px",
-        padding: "0",
+        padding: `0 ${tokens.spacingHorizontalXXS}`,
     },
     inputFlex: {
         minWidth: 0,
@@ -223,7 +228,6 @@ const useStyles = makeStyles({
         borderRadius: tokens.borderRadiusSmall,
         border: `1px solid ${tokens.colorNeutralStroke1}`,
         padding: 0,
-        marginRight: tokens.spacingHorizontalXS,
         cursor: "pointer",
         flexShrink: 1,
         background: "transparent",
@@ -298,51 +302,71 @@ export function OptionValuesGrid({
 }: OptionValuesGridProps): JSX.Element {
     const styles = useStyles();
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-    const [draggingRowId, setDraggingRowId] = useState<string | null>(null);
-    const [dragOverRowId, setDragOverRowId] = useState<string | null>(null);
+    const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+    const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
     const [applyOrderPending, setApplyOrderPending] = useState(false);
-    const prevRowIdsRef = useRef<string[]>([]);
     const [reorderingToggled, setReorderingToggled] = useState(false);
     const isReorderingEnabled = !!reorderingAlwaysOn || reorderingToggled;
     const tableWrapperRef = useRef<HTMLDivElement>(null);
-    const [scrollTop, setScrollTop] = useState(0);
-    const containerHeightRef = useRef(600);
+    const [viewport, setViewport] = useState({ scrollTop: 0, height: 600 });
     const isVirtualized = rows.length > VIRTUAL_THRESHOLD;
 
-    // Detect newly added rows and apply auto-expand / auto-add-languages.
-    // Also resets expanded state on full structural changes (load/reset).
-    useEffect(() => {
-        const currentIds = rows.map((r) => r.rowId);
-        const prevIds = prevRowIdsRef.current;
+    useRowAutoExpand(rows, setExpandedRows, onUpdateRow, {
+        autoExpandSubrowsOnAdd,
+        autoAddAllLanguagesOnAdd,
+        autoAddEnglishSubrow,
+        availableLanguageCodes,
+        defaultLanguageCode,
+    });
 
-        // Determine if this is a pure append (new rows only, no removals/reorder)
-        const isAppendOnly = currentIds.length > prevIds.length && prevIds.every((id) => currentIds.includes(id));
-        const newIds = isAppendOnly ? currentIds.filter((id) => !prevIds.includes(id)) : [];
+    const allExpanded = rows.length > 0 && rows.every((r) => expandedRows.has(r.rowId));
 
-        prevRowIdsRef.current = currentIds;
+    const toggleExpandAll = useCallback((): void => {
+        setExpandedRows(allExpanded ? new Set() : new Set(rows.map((r) => r.rowId)));
+    }, [allExpanded, rows]);
 
-        if (!isAppendOnly) {
-            // Full load/reset: collapse all
-            setExpandedRows(new Set());
-            return;
+    // Intersection of user-selected languages and Dataverse-installed languages
+    const effectiveVisibleCodes = availableLanguageCodes && availableLanguageCodes.length > 0 ? visibleLanguageCodes.filter((c) => availableLanguageCodes.includes(c)) : visibleLanguageCodes;
+
+    const mainErrorRowIds = useMemo(() => {
+        const ids = new Set<string>(apiErrorRowIds ?? []);
+        if (hasValidated) {
+            for (const issue of validationIssues) {
+                if (issue.rowId && !/\.labels\.\d+\.(label|languageCode)$/.test(issue.fieldPath ?? "")) {
+                    ids.add(issue.rowId);
+                }
+            }
         }
+        return ids;
+    }, [apiErrorRowIds, hasValidated, validationIssues]);
 
-        if (newIds.length === 0) return;
+    const langErrorSet = useMemo(() => {
+        const keys = new Set<string>();
+        if (!hasValidated) return keys;
+        for (const issue of validationIssues) {
+            if (!issue.rowId || !issue.fieldPath) continue;
+            const m = issue.fieldPath.match(/\.labels\.(\d+)\./);
+            if (m) keys.add(`${issue.rowId}:${m[1]}`);
+        }
+        return keys;
+    }, [hasValidated, validationIssues]);
 
-        const envCodes = availableLanguageCodes && availableLanguageCodes.length > 0 ? availableLanguageCodes : [];
-
-        if (autoExpandSubrowsOnAdd) {
-            // Add new rows to expanded set without touching existing
+    const toggleRowExpansion = useCallback(
+        (rowId: string): void => {
+            let willExpand = false;
             setExpandedRows((prev) => {
                 const next = new Set(prev);
-                newIds.forEach((id) => next.add(id));
+                if (prev.has(rowId)) {
+                    next.delete(rowId);
+                } else {
+                    next.add(rowId);
+                    willExpand = true;
+                }
                 return next;
             });
-        }
-
-        if (autoAddAllLanguagesOnAdd && envCodes.length > 0) {
-            newIds.forEach((newId) => {
-                onUpdateRow(newId, (current) => {
+            if (willExpand && autoAddAllLanguages && availableLanguageCodes && availableLanguageCodes.length > 0) {
+                const envCodes = availableLanguageCodes;
+                onUpdateRow(rowId, (current) => {
                     const existingCodes = new Set(current.labels.map((l) => l.languageCode));
                     const toAdd = envCodes.filter((c) => c !== defaultLanguageCode && !existingCodes.has(c));
                     if (toAdd.length === 0) return current;
@@ -351,150 +375,84 @@ export function OptionValuesGrid({
                         labels: [...current.labels, ...toAdd.map((c) => ({ languageCode: c, label: "", description: "" }))],
                     };
                 });
-            });
-        }
+            }
+        },
+        [onUpdateRow, autoAddAllLanguages, availableLanguageCodes, defaultLanguageCode]
+    );
 
-        if (autoAddEnglishSubrow && defaultLanguageCode !== 1033) {
-            newIds.forEach((newId) => {
-                onUpdateRow(newId, (current) => {
-                    if (current.labels.some((l) => l.languageCode === 1033)) return current;
-                    return {
-                        ...current,
-                        labels: [...current.labels, { languageCode: 1033, label: "", description: "" }],
-                    };
-                });
-            });
-        }
-        // onUpdateRow identity is stable from useCallback
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rows.length, autoExpandSubrowsOnAdd, autoAddAllLanguagesOnAdd, autoAddEnglishSubrow, defaultLanguageCode]);
-
-    const allExpanded = rows.length > 0 && rows.every((r) => expandedRows.has(r.rowId));
-
-    const toggleExpandAll = (): void => {
-        if (allExpanded) {
-            setExpandedRows(new Set());
-        } else {
-            setExpandedRows(new Set(rows.map((r) => r.rowId)));
-        }
-    };
-
-    // Intersection of user-selected languages and Dataverse-installed languages
-    const effectiveVisibleCodes = availableLanguageCodes && availableLanguageCodes.length > 0 ? visibleLanguageCodes.filter((c) => availableLanguageCodes.includes(c)) : visibleLanguageCodes;
-
-    const hasMainRowError = (rowId: string): boolean => {
-        if (apiErrorRowIds?.has(rowId)) return true;
-        if (!hasValidated) return false;
-        return validationIssues.some((issue) => issue.rowId === rowId && !/\.labels\.\d+\.(label|languageCode)$/.test(issue.fieldPath ?? ""));
-    };
-
-    const hasLanguageRowError = (rowId: string, languageCode: number): boolean => {
-        if (!hasValidated) return false;
-        const row = rows.find((r) => r.rowId === rowId);
-        if (!row) return false;
-        const labelIndex = row.labels.findIndex((l) => l.languageCode === languageCode);
-        if (labelIndex === -1) return false;
-        return validationIssues.some((issue) => issue.rowId === rowId && issue.fieldPath !== undefined && issue.fieldPath.includes(`.labels.${labelIndex}.`));
-    };
-
-    const toggleRowExpansion = (rowId: string): void => {
-        setExpandedRows((prev) => {
-            const next = new Set(prev);
-            const isCurrentlyExpanded = next.has(rowId);
-            if (isCurrentlyExpanded) {
-                next.delete(rowId);
-            } else {
-                next.add(rowId);
-                // Auto-add all env languages when expanding, if setting is on
-                if (autoAddAllLanguages && availableLanguageCodes && availableLanguageCodes.length > 0) {
-                    const envCodes = availableLanguageCodes;
-                    onUpdateRow(rowId, (current) => {
-                        const existingCodes = new Set(current.labels.map((l) => l.languageCode));
-                        const toAdd = envCodes.filter((c) => c !== defaultLanguageCode && !existingCodes.has(c));
-                        if (toAdd.length === 0) return current;
-                        return {
-                            ...current,
-                            labels: [...current.labels, ...toAdd.map((c) => ({ languageCode: c, label: "", description: "" }))],
-                        };
-                    });
+    const handleAddLanguage = useCallback(
+        (rowId: string, languageCode: number): void => {
+            onUpdateRow(rowId, (current) => {
+                const labels = [...current.labels];
+                if (labels.some((entry) => entry.languageCode === languageCode)) {
+                    return current;
                 }
-            }
-            return next;
-        });
-    };
-
-    const handleAddLanguage = (rowId: string, languageCode: number): void => {
-        onUpdateRow(rowId, (current) => {
-            const labels = [...current.labels];
-            if (labels.some((entry) => entry.languageCode === languageCode)) {
-                return current;
-            }
-            labels.push({
-                languageCode,
-                label: "",
-                description: "",
+                labels.push({
+                    languageCode,
+                    label: "",
+                    description: "",
+                });
+                return {
+                    ...current,
+                    labels,
+                };
             });
-            return {
-                ...current,
-                labels,
-            };
-        });
-    };
+        },
+        [onUpdateRow]
+    );
 
-    const handleRemoveLanguage = (rowId: string, languageCode: number): void => {
-        onUpdateRow(rowId, (current) => {
-            const labels = current.labels.filter((entry) => entry.languageCode !== languageCode);
-            return {
-                ...current,
-                labels,
-            };
-        });
-    };
-
-    const handleUpdateLanguageLabel = (rowId: string, languageCode: number, label: string): void => {
-        onUpdateRow(rowId, (current) => {
-            const labels = [...current.labels];
-            const targetIndex = labels.findIndex((entry) => entry.languageCode === languageCode);
-            if (targetIndex >= 0) {
-                labels[targetIndex] = {
-                    ...labels[targetIndex],
-                    label,
+    const handleRemoveLanguage = useCallback(
+        (rowId: string, languageCode: number): void => {
+            onUpdateRow(rowId, (current) => {
+                const labels = current.labels.filter((entry) => entry.languageCode !== languageCode);
+                return {
+                    ...current,
+                    labels,
                 };
-            }
-            return {
-                ...current,
-                labels,
-            };
-        });
-    };
+            });
+        },
+        [onUpdateRow]
+    );
 
-    const handleUpdateLanguageDescription = (rowId: string, languageCode: number, description: string): void => {
-        onUpdateRow(rowId, (current) => {
-            const labels = [...current.labels];
-            const targetIndex = labels.findIndex((entry) => entry.languageCode === languageCode);
-            if (targetIndex >= 0) {
-                labels[targetIndex] = {
-                    ...labels[targetIndex],
-                    description,
+    const handleUpdateLanguageLabel = useCallback(
+        (rowId: string, languageCode: number, label: string): void => {
+            onUpdateRow(rowId, (current) => {
+                const labels = [...current.labels];
+                const targetIndex = labels.findIndex((entry) => entry.languageCode === languageCode);
+                if (targetIndex >= 0) {
+                    labels[targetIndex] = {
+                        ...labels[targetIndex],
+                        label,
+                    };
+                }
+                return {
+                    ...current,
+                    labels,
                 };
-            }
-            return {
-                ...current,
-                labels,
-            };
-        });
-    };
+            });
+        },
+        [onUpdateRow]
+    );
 
-    const handleUpdateLanguageHidden = (rowId: string, languageCode: number, hidden: boolean): void => {
-        onUpdateRow(rowId, (current) => {
-            const labels = [...current.labels];
-            const targetIndex = labels.findIndex((entry) => entry.languageCode === languageCode);
-            if (targetIndex >= 0) {
-                labels[targetIndex] = { ...labels[targetIndex], hidden };
-            }
-            return { ...current, labels };
-        });
-    };
+    const handleUpdateLanguageDescription = useCallback(
+        (rowId: string, languageCode: number, description: string): void => {
+            onUpdateRow(rowId, (current) => {
+                const labels = [...current.labels];
+                const targetIndex = labels.findIndex((entry) => entry.languageCode === languageCode);
+                if (targetIndex >= 0) {
+                    labels[targetIndex] = {
+                        ...labels[targetIndex],
+                        description,
+                    };
+                }
+                return {
+                    ...current,
+                    labels,
+                };
+            });
+        },
+        [onUpdateRow]
+    );
 
     // ── Virtual scrolling ─────────────────────────────────────────────────────
     const rowGroupHeights = useMemo(() => {
@@ -529,8 +487,8 @@ export function OptionValuesGrid({
 
     const { visibleStart, visibleEnd } = useMemo(() => {
         if (!isVirtualized) return { visibleStart: 0, visibleEnd: rows.length - 1 };
-        const viewStart = Math.max(0, scrollTop - OVERSCAN * BASE_ROW_H);
-        const viewEnd = scrollTop + containerHeightRef.current + OVERSCAN * BASE_ROW_H;
+        const viewStart = Math.max(0, viewport.scrollTop - OVERSCAN * BASE_ROW_H);
+        const viewEnd = viewport.scrollTop + viewport.height + OVERSCAN * BASE_ROW_H;
         let start = 0;
         let end = rows.length - 1;
         for (let i = 0; i < cumulativeOffsets.length; i++) {
@@ -539,19 +497,18 @@ export function OptionValuesGrid({
             else break;
         }
         return { visibleStart: start, visibleEnd: Math.min(rows.length - 1, end + 1) };
-    }, [isVirtualized, scrollTop, cumulativeOffsets, rows.length]);
+    }, [isVirtualized, viewport, cumulativeOffsets, rows.length]);
 
     const topSpacerH = isVirtualized ? (cumulativeOffsets[visibleStart] ?? 0) : 0;
     const bottomSpacerH = isVirtualized ? Math.max(0, totalRowsHeight - (cumulativeOffsets[visibleEnd] ?? 0) - (rowGroupHeights[visibleEnd] ?? 0)) : 0;
 
     const handleTableScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-        containerHeightRef.current = e.currentTarget.clientHeight;
-        setScrollTop(e.currentTarget.scrollTop);
+        const { scrollTop, clientHeight } = e.currentTarget;
+        setViewport({ scrollTop, height: clientHeight });
     }, []);
 
-    const colCount = isReorderingEnabled ? 6 : 5;
+    const colCount = isReorderingEnabled ? 7 : 6;
     const visibleRows = isVirtualized ? rows.slice(visibleStart, visibleEnd + 1) : rows;
-    // ─────────────────────────────────────────────────────────────────────────
 
     if (rows.length === 0) {
         return (
@@ -619,12 +576,13 @@ export function OptionValuesGrid({
             >
                 <table className={styles.table} aria-label="Option values">
                     <colgroup>
-                        {isReorderingEnabled && <col style={{ width: 32 }} />}
-                        <col style={{ width: 32 }} />
-                        <col style={{ width: "25%" }} />
-                        <col style={{ width: "15%" }} />
-                        <col style={{ width: "auto" }} />
-                        <col style={{ width: 78 }} />
+                        {isReorderingEnabled && <col style={{ width: 36 }} />} {/* Drag handle column */}
+                        <col style={{ width: 42 }} /> {/* Chevron column */}
+                        <col style={{ width: 32 }} /> {/* Color column */}
+                        <col style={{ width: "25%" }} /> {/* Label column */}
+                        <col style={{ width: "15%" }} /> {/* Value column */}
+                        <col style={{ width: "auto" }} /> {/* Description column */}
+                        <col style={{ width: 78 }} /> {/* Action column */}
                     </colgroup>
                     <thead className={styles.tableHead}>
                         <tr>
@@ -642,6 +600,7 @@ export function OptionValuesGrid({
                                     />
                                 )}
                             </th>
+                            <th className={mergeClasses(styles.th, styles.colorCell)} scope="col" />
                             <th className={mergeClasses(styles.th, styles.columnProps)} scope="col">
                                 Label
                             </th>
@@ -660,7 +619,8 @@ export function OptionValuesGrid({
                                 <td colSpan={colCount} />
                             </tr>
                         )}
-                        {visibleRows.map((row) => {
+                        {visibleRows.map((row, sliceIndex) => {
+                            const rowIndex = isVirtualized ? visibleStart + sliceIndex : sliceIndex;
                             const isExpanded = expandedRows.has(row.rowId);
                             const otherLanguages = row.labels.filter((entry) => entry.languageCode !== defaultLanguageCode);
                             const existingLanguageCodes = [...new Set([defaultLanguageCode, ...row.labels.map((entry) => entry.languageCode)])];
@@ -669,20 +629,21 @@ export function OptionValuesGrid({
                                 <Fragment key={row.rowId}>
                                     <OptionRowMain
                                         row={row}
-                                        rows={rows}
+                                        rowIndex={rowIndex}
+                                        rowCount={rows.length}
                                         defaultLanguageCode={defaultLanguageCode}
                                         styles={styles}
                                         isExpanded={isExpanded}
                                         singleLanguageMode={singleLanguageMode}
-                                        hasMainRowError={hasMainRowError}
-                                        apiSuccessRowIds={apiSuccessRowIds}
-                                        draggingRowId={draggingRowId}
-                                        dragOverRowId={dragOverRowId}
+                                        isError={mainErrorRowIds.has(row.rowId)}
+                                        isApiSuccess={!!apiSuccessRowIds?.has(row.rowId)}
+                                        isDragOver={dragOverIndex === rowIndex}
+                                        draggingIndex={draggingIndex}
                                         onUpdateRow={onUpdateRow}
                                         onRemoveRow={onRemoveRow}
                                         toggleRowExpansion={toggleRowExpansion}
-                                        setDraggingRowId={setDraggingRowId}
-                                        setDragOverRowId={setDragOverRowId}
+                                        setDraggingIndex={setDraggingIndex}
+                                        setDragOverIndex={setDragOverIndex}
                                         onReorderRows={onReorderRows}
                                         hideAdvancedProperties={hideRowAdvancedProperties}
                                         isDirty={dirtyRowIds?.has(row.rowId)}
@@ -705,24 +666,26 @@ export function OptionValuesGrid({
 
                                     {!singleLanguageMode &&
                                         isExpanded &&
-                                        otherLanguages.map((langEntry) => (
-                                            <LanguageSubRow
-                                                key={`${row.rowId}-lang-${langEntry.languageCode}`}
-                                                row={row}
-                                                langEntry={langEntry}
-                                                styles={styles}
-                                                existingLanguageCodes={existingLanguageCodes}
-                                                availableLanguageCodes={effectiveVisibleCodes}
-                                                sortLanguagesByCode={sortLanguagesByCode}
-                                                hasLanguageRowError={hasLanguageRowError}
-                                                onUpdateRow={onUpdateRow}
-                                                onUpdateLanguageLabel={handleUpdateLanguageLabel}
-                                                onUpdateLanguageDescription={handleUpdateLanguageDescription}
-                                                onUpdateLanguageHidden={handleUpdateLanguageHidden}
-                                                onRemoveLanguage={handleRemoveLanguage}
-                                                reorderingEnabled={isReorderingEnabled}
-                                            />
-                                        ))}
+                                        otherLanguages.map((langEntry) => {
+                                            const labelIdx = row.labels.findIndex((l) => l.languageCode === langEntry.languageCode);
+                                            return (
+                                                <LanguageSubRow
+                                                    key={`${row.rowId}-lang-${langEntry.languageCode}`}
+                                                    row={row}
+                                                    langEntry={langEntry}
+                                                    styles={styles}
+                                                    existingLanguageCodes={existingLanguageCodes}
+                                                    availableLanguageCodes={effectiveVisibleCodes}
+                                                    sortLanguagesByCode={sortLanguagesByCode}
+                                                    isError={labelIdx >= 0 && langErrorSet.has(`${row.rowId}:${labelIdx}`)}
+                                                    onUpdateRow={onUpdateRow}
+                                                    onUpdateLanguageLabel={handleUpdateLanguageLabel}
+                                                    onUpdateLanguageDescription={handleUpdateLanguageDescription}
+                                                    onRemoveLanguage={handleRemoveLanguage}
+                                                    reorderingEnabled={isReorderingEnabled}
+                                                />
+                                            );
+                                        })}
 
                                     {!singleLanguageMode && isExpanded && (
                                         <LanguagePickerRow

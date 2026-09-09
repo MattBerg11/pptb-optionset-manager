@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { DataverseMetadataService } from "../api/dataverseMetadata";
 import type { GlobalOptionSetDetail, LocalChoiceDetail, OptionDraftRow, OptionSetDraft, SaveLoadState, ValidationIssue } from "../models/optionSetModels";
 import { upsertOptionSet } from "../services/dataverseOptionSetService";
@@ -48,6 +48,9 @@ export function useSaveLoad(
         loadedOptionSetName: null,
         conflictDialog: { open: false, remoteOptionCount: 0, localOptionCount: 0 },
     });
+    // Always-current ref so doUpsert doesn't close over a stale actions object
+    const actionsRef = useRef(actions);
+    actionsRef.current = actions;
 
     const hasBlockingErrors = issues.some((issue) => issue.severity === "error");
     const isSaveable =
@@ -66,7 +69,7 @@ export function useSaveLoad(
                 const errorMessage = `Save completed with errors: ${result.summary.failed} options failed`;
                 console.error(`[SaveLoad] ${errorMessage}`);
                 setState((prev) => ({ ...prev, status: "error", error: errorMessage, successMessage: null }));
-                actions.setApiErrorRows(result.rows.filter(r => r.status === "failed").map(r => r.rowId));
+                actionsRef.current.setApiErrorRows(result.rows.filter(r => r.status === "failed").map(r => r.rowId));
                 await window.toolboxAPI.utils.showNotification({ title: "Save Error", body: errorMessage, type: "error", duration: 5000 });
             } else {
                 const parts: string[] = [];
@@ -81,7 +84,7 @@ export function useSaveLoad(
                 await window.toolboxAPI.utils.showNotification({ title: "Success", body: saveMessage, type: "success", duration: 3000 });
 
                 const createdRowIds = result.rows.filter(r => r.status === "created").map(r => r.rowId);
-                actions.setApiSuccessRows(createdRowIds);
+                actionsRef.current.setApiSuccessRows(createdRowIds);
 
                 // Back-sync: reload to pick up server-assigned values after create/update
                 try {
@@ -105,7 +108,7 @@ export function useSaveLoad(
                             typeof descRaw === "string"
                                 ? descRaw
                                 : descRaw?.UserLocalizedLabel?.Label ?? descRaw?.LocalizedLabels?.[0]?.Label ?? "";
-                        actions.applyDraft({
+                        actionsRef.current.applyDraft({
                             ...draft,
                             scope: "global",
                             optionSetSchemaName: reloaded.Name,
@@ -129,7 +132,7 @@ export function useSaveLoad(
                             }));
                             return { rowId, optionValue: option.Value, externalKey: "", labels };
                         });
-                        actions.applyDraft({
+                        actionsRef.current.applyDraft({
                             ...draft,
                             scope: "local",
                             rows: reloadedRows,
@@ -142,7 +145,7 @@ export function useSaveLoad(
                 } catch (reloadError) {
                     console.warn("[SaveLoad] Post-save reload failed:", reloadError);
                     if (draft.operation === "create") {
-                        actions.setField("operation", "update");
+                        actionsRef.current.setField("operation", "update");
                     }
                 }
             }
@@ -152,7 +155,7 @@ export function useSaveLoad(
             setState((prev) => ({ ...prev, status: "error", error: errorMessage, successMessage: null }));
             await window.toolboxAPI.utils.showNotification({ title: "Save Error", body: errorMessage, type: "error", duration: 5000 });
         }
-    }, [draft, dirtyRowIds, loadedOptionValues, actions, metadataService]);
+    }, [draft, dirtyRowIds, loadedOptionValues, metadataService]);
 
     const handleSave = useCallback(async () => {
         if (!canSave) {

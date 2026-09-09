@@ -154,6 +154,9 @@ export function MetadataSelector({
     const [pendingGlobalOptionSetName, setPendingGlobalOptionSetName] = useState<string | null>(null);
     const [confirmGlobalOptionSetChangeOpen, setConfirmGlobalOptionSetChangeOpen] = useState(false);
 
+    const localChoiceGuardRef = useRef<{ cancelled: boolean } | null>(null);
+    const optionSetDetailGuardRef = useRef<{ cancelled: boolean } | null>(null);
+
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
     const [loadAllEntitiesClicked, setLoadAllEntitiesClicked] = useState(false);
 
@@ -205,7 +208,7 @@ export function MetadataSelector({
                 setLoading("solutions", false);
             }
         },
-        [metadataService, publishers]
+        [metadataService]
     );
 
     const loadEntities = useCallback(
@@ -378,17 +381,20 @@ export function MetadataSelector({
         });
 
         if (attributeLogicalName && attribute && selection.entityLogicalName && onLocalChoiceLoaded) {
+            if (localChoiceGuardRef.current) localChoiceGuardRef.current.cancelled = true;
+            const guard = { cancelled: false };
+            localChoiceGuardRef.current = guard;
             setLoading("localChoice", true);
             metadataService
                 .getLocalChoiceOptions(selection.entityLogicalName, attributeLogicalName, attribute.displayName)
                 .then((detail) => {
-                    onLocalChoiceLoaded(detail);
+                    if (!guard.cancelled) onLocalChoiceLoaded(detail);
                 })
                 .catch((err: unknown) => {
-                    setFieldError("attributes", err instanceof Error ? err.message : "Failed to load choice options");
+                    if (!guard.cancelled) setFieldError("attributes", err instanceof Error ? err.message : "Failed to load choice options");
                 })
                 .finally(() => {
-                    setLoading("localChoice", false);
+                    if (!guard.cancelled) setLoading("localChoice", false);
                 });
         }
     };
@@ -396,17 +402,20 @@ export function MetadataSelector({
     const handleGlobalOptionSetSelect = useCallback(
         async (name: string): Promise<void> => {
             if (!name) return;
+            if (optionSetDetailGuardRef.current) optionSetDetailGuardRef.current.cancelled = true;
             onSelectionChange({ selectedGlobalOptionSetName: name });
             setOptionSetFilter("");
             if (onGlobalOptionSetLoaded) {
+                const guard = { cancelled: false };
+                optionSetDetailGuardRef.current = guard;
                 setLoading("optionSetDetail", true);
                 try {
                     const detail = await metadataService.getGlobalOptionSetDetail(name);
-                    onGlobalOptionSetLoaded(detail);
+                    if (!guard.cancelled) onGlobalOptionSetLoaded(detail);
                 } catch (err) {
-                    setFieldError("globalOptionSets", err instanceof Error ? err.message : "Failed to load option set details");
+                    if (!guard.cancelled) setFieldError("globalOptionSets", err instanceof Error ? err.message : "Failed to load option set details");
                 } finally {
-                    setLoading("optionSetDetail", false);
+                    if (!guard.cancelled) setLoading("optionSetDetail", false);
                 }
             }
         },

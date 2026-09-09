@@ -1,5 +1,5 @@
 import { Button, Tooltip } from "@fluentui/react-components";
-import { LanguageMenu } from "../common/LanguageCodeDropdown";
+import { LanguageMenu } from "../../shared/LanguageCodeDropdown";
 
 interface LanguagePickerRowProps {
     rowId: string;
@@ -11,20 +11,12 @@ interface LanguagePickerRowProps {
     reorderingEnabled?: boolean;
 }
 
-export function LanguagePickerRow({
-    rowId,
-    styles,
-    availableLanguageCodes,
-    existingLanguageCodes,
-    onAddLanguage,
-    sortLanguagesByCode,
-    reorderingEnabled,
-}: LanguagePickerRowProps): JSX.Element {
+export function LanguagePickerRow({ rowId, styles, availableLanguageCodes, existingLanguageCodes, onAddLanguage, sortLanguagesByCode, reorderingEnabled }: LanguagePickerRowProps): JSX.Element {
     const remainingCodes = availableLanguageCodes.filter((c) => !existingLanguageCodes.includes(c));
 
     return (
         <tr className={styles.languageAddRow}>
-            <td className={styles.td} colSpan={reorderingEnabled ? 6 : 5}>
+            <td className={styles.td} colSpan={reorderingEnabled ? 7 : 6}>
                 {remainingCodes.length === 0 ? (
                     <div className={styles.addLanguageContainer}>
                         <span className={styles.secondaryText}>No additional languages are available in this environment.</span>
