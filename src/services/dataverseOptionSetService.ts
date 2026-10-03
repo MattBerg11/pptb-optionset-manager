@@ -1,6 +1,7 @@
-import { DEFAULT_LANGUAGE_CODE } from "../components/languages/languageConfig";
-import { OptionSetOperationError } from "../errors/OptionSetErrors";
+import { DEFAULT_LANGUAGE_CODE } from "../constants.ts";
+import { OptionSetOperationError } from "../models/optionSetErrors";
 import type { OptionDraftRow, OptionSetDraft, OptionSetOperationResult } from "../models/optionSetModels";
+import { assignOptionValues } from "../utils/optionValues";
 
 // Returns a plain serializable Label object; avoids non-cloneable PPTB-internal objects from buildLabel().
 function plainLabel(text: string, languageCode: number = DEFAULT_LANGUAGE_CODE): Record<string, unknown> {
@@ -18,10 +19,12 @@ function plainLabel(text: string, languageCode: number = DEFAULT_LANGUAGE_CODE):
 
 // UserLocalizedLabel must point to the default-language entry so Dataverse shows the
 // correct label in the UI regardless of the user's language setting.
+// Blank translations are omitted so an empty sub-row can never overwrite an existing translation.
 function buildLabel(row: OptionDraftRow, defaultLanguageCode: number): DataverseAPI.Label {
-    const defaultEntry = row.labels.find((l) => l.languageCode === defaultLanguageCode) ?? row.labels[0];
+    const populated = row.labels.filter((l) => l.label.trim().length > 0);
+    const defaultEntry = populated.find((l) => l.languageCode === defaultLanguageCode) ?? populated[0];
 
-    const localizedLabels: DataverseAPI.LocalizedLabel[] = row.labels.map((l) => ({
+    const localizedLabels: DataverseAPI.LocalizedLabel[] = populated.map((l) => ({
         "@odata.type": "Microsoft.Dynamics.CRM.LocalizedLabel" as const,
         Label: l.label,
         LanguageCode: l.languageCode,
@@ -68,60 +71,70 @@ function normalizeError(error: unknown): string {
     return "Unknown Dataverse error.";
 }
 
+type TargetDraft = Pick<OptionSetDraft, "scope" | "optionSetSchemaName" | "entityLogicalName" | "attributeLogicalName" | "globalOptionSetName" | "solutionUniqueName">;
+
+// Global sets are addressed by name. A local column backed by a global choice must be edited through that global set.
+function targetParams(draft: TargetDraft): Record<string, unknown> {
+    const optionSetName = draft.scope === "global" ? draft.optionSetSchemaName : draft.globalOptionSetName;
+    if (optionSetName) return { OptionSetName: optionSetName };
+    return { EntityLogicalName: draft.entityLogicalName, AttributeLogicalName: draft.attributeLogicalName };
+}
+
+function publishScope(draft: TargetDraft): string | undefined {
+    return draft.scope === "local" && !draft.globalOptionSetName ? draft.entityLogicalName : undefined;
+}
+
+async function globalOptionSetExists(name: string): Promise<boolean> {
+    try {
+        await window.dataverseAPI.queryData(`GlobalOptionSetDefinitions(Name='${name.replace(/'/g, "''")}')`);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function sameSequence(a: readonly number[], b: readonly number[]): boolean {
+    return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
 export async function upsertOptionSet(draft: OptionSetDraft, dirtyRowIds?: ReadonlySet<string>, loadedOptionValues?: ReadonlySet<number>): Promise<OptionSetOperationResult> {
     const solutionOptions = draft.solutionUniqueName ? { solutionUniqueName: draft.solutionUniqueName } : undefined;
+    const persisted = loadedOptionValues ?? new Set<number>();
+    const warnings: string[] = [];
 
-    // ── CREATE global: one atomic POST that includes all options ──────────────
-    // Per SKILL.md, creating a global option set via POST GlobalOptionSetDefinitions
-    // with Options[] is the recommended single-call approach. Pass null for Value to
-    // ── CREATE global: create shell first, then insert options individually ──
-    // Avoid passing Options[] in the POST body because PPTB's createGlobalOptionSet
-    // wrapper throws when the OData-EntityId header is absent from the response
-    // (seen in some Dataverse versions). Swallow that specific PPTB wrapper error —
-    // Dataverse still creates the option set successfully.
-    if (draft.operation === "create" && draft.scope === "global") {
-        try {
-            await window.dataverseAPI.createGlobalOptionSet(
-                {
-                    "@odata.type": "Microsoft.Dynamics.CRM.OptionSetMetadata",
-                    Name: draft.optionSetSchemaName,
-                    DisplayName: plainLabel(draft.displayName, draft.defaultLanguageCode),
-                    Description: plainLabel(draft.description || draft.displayName, draft.defaultLanguageCode),
-                    OptionSetType: "Picklist",
-                    IsGlobal: true,
-                },
-                solutionOptions
-            );
-        } catch (createError) {
-            const msg = normalizeError(createError);
-            // Swallow PPTB's MetadataId-header parse error; the option set was created
-            if (!msg.includes("OData-EntityId") && !msg.includes("MetadataId")) {
-                throw createError;
+    // ── CREATE / UPSERT global: create the option set shell, then insert options individually ──
+    // Options[] is deliberately not sent in the POST body: PPTB's createGlobalOptionSet wrapper can throw when
+    // the OData-EntityId header is absent from the response even though Dataverse created the set.
+    if (draft.scope === "global" && (draft.operation === "create" || draft.operation === "upsert")) {
+        const alreadyExists = await globalOptionSetExists(draft.optionSetSchemaName);
+        if (alreadyExists && draft.operation === "create") {
+            throw new OptionSetOperationError(`A global option set named "${draft.optionSetSchemaName}" already exists. Select it in the sidebar to edit it instead.`, "CreateGlobalOptionSet");
+        }
+
+        if (!alreadyExists) {
+            try {
+                await window.dataverseAPI.createGlobalOptionSet(
+                    {
+                        "@odata.type": "Microsoft.Dynamics.CRM.OptionSetMetadata",
+                        Name: draft.optionSetSchemaName,
+                        DisplayName: plainLabel(draft.displayName, draft.defaultLanguageCode),
+                        Description: plainLabel(draft.description || draft.displayName, draft.defaultLanguageCode),
+                        OptionSetType: "Picklist",
+                        IsGlobal: true,
+                    },
+                    solutionOptions
+                );
+            } catch (createError) {
+                // Only carry on if the set really exists now; any other failure is a genuine create error.
+                if (!(await globalOptionSetExists(draft.optionSetSchemaName))) throw createError;
             }
         }
-        // Fall through to the per-row insert loop below
     }
 
-    // ── UPSERT global: try create shell first, then insert/update per row ─────
-    if (draft.operation === "upsert" && draft.scope === "global") {
-        try {
-            await window.dataverseAPI.createGlobalOptionSet(
-                {
-                    "@odata.type": "Microsoft.Dynamics.CRM.OptionSetMetadata",
-                    Name: draft.optionSetSchemaName,
-                    DisplayName: plainLabel(draft.displayName, draft.defaultLanguageCode),
-                    Description: plainLabel(draft.description || draft.displayName, draft.defaultLanguageCode),
-                    OptionSetType: "Picklist",
-                    IsGlobal: true,
-                },
-                solutionOptions
-            );
-        } catch {
-            // option set already exists — proceed to insert/update values
-        }
-    }
+    // Rows without a value get one from the publisher's range; if the prefix is unknown Dataverse assigns it on insert.
+    const assignedValues = assignOptionValues(draft.rows, draft.optionValuePrefix, persisted);
+    const target = targetParams(draft);
 
-    // ── UPDATE / UPSERT / CREATE (per-row): insert or update each option individually ──
     const operationRows: OptionSetOperationResult["rows"] = [];
     let created = 0;
     let updated = 0;
@@ -129,80 +142,76 @@ export async function upsertOptionSet(draft: OptionSetDraft, dirtyRowIds?: Reado
     let deleted = 0;
     let failed = 0;
 
-    for (let index = 0; index < draft.rows.length; index += 1) {
-        const row = draft.rows[index];
+    const finalValues: Array<number | undefined> = [];
+    const insertedValues: number[] = [];
 
-        // For update operations the value must match the existing option exactly.
-        // For upsert/insert, use the publisher's option value prefix to generate values
-        // only when the user hasn't specified one.
-        const generatedValue = draft.optionValuePrefix * 98922 + index;
-        const valueToApply = row.optionValue ?? generatedValue;
-
-        const label = buildLabel(row, draft.defaultLanguageCode);
-        const desc = buildDescription(row, draft.defaultLanguageCode);
-
-        const baseParams: Record<string, unknown> = {
-            Value: valueToApply,
-            Label: label,
-            MergeLabels: true,
-        };
-
-        if (desc) baseParams.Description = desc;
-        if (draft.solutionUniqueName) baseParams.SolutionUniqueName = draft.solutionUniqueName;
-
-        if (draft.scope === "global") {
-            baseParams.OptionSetName = draft.optionSetSchemaName;
-        } else {
-            baseParams.EntityLogicalName = draft.entityLogicalName;
-            baseParams.AttributeLogicalName = draft.attributeLogicalName;
-        }
+    for (const row of draft.rows) {
+        const requestedValue = row.optionValue ?? assignedValues.get(row.rowId);
+        const isPersistedRow = row.optionValue !== undefined && persisted.has(row.optionValue);
+        let finalValue = requestedValue;
 
         try {
-            if (draft.operation === "update") {
-                if (dirtyRowIds && !dirtyRowIds.has(row.rowId)) {
-                    skipped += 1;
-                    operationRows.push({ rowId: row.rowId, optionValue: valueToApply, status: "skipped", message: "Row unchanged." });
-                    continue;
-                }
-                await window.dataverseAPI.updateOptionValue(baseParams);
+            if (draft.operation === "update" && isPersistedRow && dirtyRowIds && !dirtyRowIds.has(row.rowId)) {
+                skipped += 1;
+                finalValues.push(finalValue);
+                operationRows.push({ rowId: row.rowId, optionValue: finalValue, status: "skipped", message: "Row unchanged." });
+                continue;
+            }
+
+            const params: Record<string, unknown> = {
+                ...target,
+                Label: buildLabel(row, draft.defaultLanguageCode),
+            };
+            if (requestedValue !== undefined) params.Value = requestedValue;
+            const description = buildDescription(row, draft.defaultLanguageCode);
+            if (description) params.Description = description;
+            if (row.externalKey) params.ExternalValue = row.externalKey;
+            if (row.hidden !== undefined) params.IsHidden = row.hidden;
+            if (row.color) params.Color = row.color;
+            if (draft.solutionUniqueName) params.SolutionUniqueName = draft.solutionUniqueName;
+
+            const insert = async (): Promise<void> => {
+                const response = await window.dataverseAPI.insertOptionValue(params);
+                const newValue = response?.["NewOptionValue"];
+                if (requestedValue === undefined && typeof newValue === "number") finalValue = newValue;
+                created += 1;
+                if (finalValue !== undefined) insertedValues.push(finalValue);
+                operationRows.push({ rowId: row.rowId, optionValue: finalValue, status: "created", message: "Option created." });
+            };
+            const update = async (message: string): Promise<void> => {
+                await window.dataverseAPI.updateOptionValue({ ...params, MergeLabels: true });
                 updated += 1;
-                operationRows.push({ rowId: row.rowId, optionValue: valueToApply, status: "updated", message: "Option updated." });
-            } else {
-                // create or upsert — try insert first
+                operationRows.push({ rowId: row.rowId, optionValue: finalValue, status: "updated", message });
+            };
+
+            if (draft.operation === "update") {
+                // An existing option is updated; anything not yet in Dataverse is a new option and must be inserted.
+                if (isPersistedRow) await update("Option updated.");
+                else await insert();
+            } else if (draft.operation === "upsert") {
                 try {
-                    await window.dataverseAPI.insertOptionValue(baseParams);
-                    created += 1;
-                    operationRows.push({ rowId: row.rowId, optionValue: valueToApply, status: "created", message: "Option created." });
-                } catch (insertError) {
-                    if (draft.operation === "upsert") {
-                        await window.dataverseAPI.updateOptionValue(baseParams);
-                        updated += 1;
-                        operationRows.push({ rowId: row.rowId, optionValue: valueToApply, status: "updated", message: "Option existed and was updated." });
-                    } else {
-                        throw insertError;
-                    }
+                    await insert();
+                } catch {
+                    await update("Option existed and was updated.");
                 }
+            } else {
+                await insert();
             }
         } catch (rowError) {
             failed += 1;
-            operationRows.push({ rowId: row.rowId, optionValue: valueToApply, status: "failed", message: normalizeError(rowError) });
+            operationRows.push({ rowId: row.rowId, optionValue: finalValue, status: "failed", message: normalizeError(rowError) });
         }
+        finalValues.push(finalValue);
     }
 
     // Delete option values that were removed from the draft
-    if (loadedOptionValues && loadedOptionValues.size > 0) {
+    if (persisted.size > 0) {
         const currentValues = new Set(draft.rows.map((r) => r.optionValue).filter((v): v is number => v !== undefined));
-        for (const deletedValue of loadedOptionValues) {
+        for (const deletedValue of persisted) {
             if (currentValues.has(deletedValue)) continue;
 
-            const deleteParams: Record<string, unknown> = { Value: deletedValue };
+            const deleteParams: Record<string, unknown> = { ...target, Value: deletedValue };
             if (draft.solutionUniqueName) deleteParams.SolutionUniqueName = draft.solutionUniqueName;
-            if (draft.scope === "global") {
-                deleteParams.OptionSetName = draft.optionSetSchemaName;
-            } else {
-                deleteParams.EntityLogicalName = draft.entityLogicalName;
-                deleteParams.AttributeLogicalName = draft.attributeLogicalName;
-            }
 
             try {
                 await window.dataverseAPI.deleteOptionValue(deleteParams);
@@ -215,40 +224,40 @@ export async function upsertOptionSet(draft: OptionSetDraft, dirtyRowIds?: Reado
         }
     }
 
-    // Publish so all changes become active in Dataverse
-    await window.dataverseAPI.publishCustomizations(draft.scope === "local" ? draft.entityLogicalName : undefined);
-
-    if (failed > 0) {
-        throw new OptionSetOperationError("One or more options failed to apply. Review row status for details.", "ApplyRows", operationRows);
+    // Reordering: Dataverse appends new options and keeps existing ones in load order, so only call
+    // OrderOption when the grid order differs from that expected order.
+    if (draft.operation !== "create" && failed === 0 && finalValues.length > 0 && finalValues.every((v): v is number => v !== undefined)) {
+        const currentValues = new Set(finalValues);
+        const expectedOrder = [...[...persisted].filter((v) => currentValues.has(v)), ...insertedValues];
+        if (!sameSequence(finalValues, expectedOrder)) {
+            try {
+                await window.dataverseAPI.orderOption({ ...target, Values: finalValues, ...(draft.solutionUniqueName ? { SolutionUniqueName: draft.solutionUniqueName } : {}) });
+            } catch (orderError) {
+                warnings.push(`Option order was not applied: ${normalizeError(orderError)}`);
+            }
+        }
     }
 
-    return { summary: { created, updated, skipped, deleted, failed }, rows: operationRows };
+    // Publish so all changes become active in Dataverse
+    await window.dataverseAPI.publishCustomizations(publishScope(draft));
+
+    return { summary: { created, updated, skipped, deleted, failed }, rows: operationRows, warnings };
 }
 
-export async function orderOptionSet(draft: Pick<OptionSetDraft, "scope" | "optionSetSchemaName" | "entityLogicalName" | "attributeLogicalName" | "solutionUniqueName" | "rows">): Promise<void> {
+export async function orderOptionSet(draft: TargetDraft & Pick<OptionSetDraft, "rows">): Promise<void> {
     if (draft.rows.some((r) => r.optionValue === undefined || r.optionValue === null)) {
         throw new OptionSetOperationError("Cannot reorder: some options have no assigned value. Save the option set first to assign values.", "OrderOptionSet");
     }
 
     const values = draft.rows.map((r) => r.optionValue).filter((v): v is number => v !== undefined && v !== null);
 
-    const params: Record<string, unknown> = { Values: values };
-
-    if (draft.solutionUniqueName) {
-        params.SolutionUniqueName = draft.solutionUniqueName;
-    }
-
-    if (draft.scope === "global") {
-        params.OptionSetName = draft.optionSetSchemaName;
-    } else {
-        params.EntityLogicalName = draft.entityLogicalName;
-        params.AttributeLogicalName = draft.attributeLogicalName;
-    }
+    const params: Record<string, unknown> = { ...targetParams(draft), Values: values };
+    if (draft.solutionUniqueName) params.SolutionUniqueName = draft.solutionUniqueName;
 
     await window.dataverseAPI.orderOption(params);
 
     try {
-        await window.dataverseAPI.publishCustomizations(draft.scope === "local" ? draft.entityLogicalName : undefined);
+        await window.dataverseAPI.publishCustomizations(publishScope(draft));
     } catch (publishError) {
         console.error("[OptionSetService] publishCustomizations failed after orderOption:", publishError);
     }

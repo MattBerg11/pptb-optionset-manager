@@ -1,38 +1,30 @@
-import {
-    Button,
-    Dialog,
-    DialogActions,
-    DialogBody,
-    DialogContent,
-    DialogSurface,
-    DialogTitle,
-    FluentProvider,
-    Tab,
-    TabList,
-    Tooltip,
-    makeStyles,
-    tokens,
-    webDarkTheme,
-    webLightTheme,
-} from "@fluentui/react-components";
-import { ArrowImportRegular, DeleteRegular, SettingsRegular } from "@fluentui/react-icons";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DataverseMetadataService } from "../api/dataverseMetadata";
-import { ConfirmDialog, EmptyState, StatusMessageBar } from "../components/common";
-import { ActionBar, StatusBar } from "../components/layout";
-import { ValidationPanel } from "../components/validation";
-import { BuilderTab } from "../components/Main/BuilderTab";
-import { CodeTab } from "../components/Main/CodeTab";
-import { DEFAULT_LANGUAGE_CODE } from "../components/languages/languageConfig";
-import { ImportModal } from "../components/Modals";
-import { SettingsPanel } from "../components/Settings";
-import { SidebarPanel } from "../components/Sidebar";
+import { Button, FluentProvider, Tooltip, makeStyles, tokens } from "@fluentui/react-components";
+import { ArrowImportRegular, DeleteRegular } from "@fluentui/react-icons";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { DataverseMetadataService } from "../services/dataverseMetadataService";
+import { ConfirmDialog, EmptyState, StatusMessageBar } from "../components/shared";
+import { ActionBar, StatusBar, TabNavigation } from "../components/editor";
+import { ValidationPanel } from "../components/sidebars";
+import { BuilderTab } from "../components/editor";
+import { CodeTab } from "../components/editor/CodeTab";
+import { ConflictDialog, ImportModal, SaveReviewDialog } from "../components/modals";
+import { SettingsPanel } from "../components/sidebars";
+import { SidebarPanel } from "../components/sidebars";
 import { orderOptionSet } from "../services/dataverseOptionSetService";
 import { useActivityLog } from "../hooks/useActivityLog";
 import { useOptionSetBuilder } from "../hooks/useOptionSetBuilder";
+import { usePageOrchestration } from "../hooks/usePageOrchestration";
 import { useSaveLoad } from "../hooks/useSaveLoad";
 import { useSettings } from "../hooks/useSettings";
-import { useConnection, useToolboxEvents } from "../hooks/useToolboxAPI";
+import { useConnection } from "../hooks/useToolboxAPI";
+import { useThemeSync } from "../hooks/useThemeSync";
+import { useHasValidated } from "../hooks/useHasValidated";
+import { useGridActiveState } from "../hooks/useGridActiveState";
+import { useEnvironmentLanguages } from "../hooks/useEnvironmentLanguages";
+import { useDefaultLanguageSync } from "../hooks/useDefaultLanguageSync";
+import { useImportWarningNotification } from "../hooks/useImportWarningNotification";
+import { useAutoSchemaName } from "../hooks/useAutoSchemaName";
+import { deriveSchemaName } from "../utils/deriveSchemaName";
 
 const useStyles = makeStyles({
     root: {
@@ -54,18 +46,6 @@ const useStyles = makeStyles({
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
-    },
-    tabNavigation: {
-        display: "flex",
-        alignItems: "center",
-        gap: tokens.spacingHorizontalS,
-        padding: `0 ${tokens.spacingHorizontalM}`,
-        borderBottom: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
-        backgroundColor: tokens.colorNeutralBackground2,
-        minHeight: "36px",
-    },
-    tabSpacer: {
-        flex: 1,
     },
     actionBar: {
         display: "flex",
@@ -253,103 +233,64 @@ const useStyles = makeStyles({
     },
 });
 
-type ActiveTab = "builder" | "code";
-
 export function App(): JSX.Element {
     const styles = useStyles();
-    const [theme, setTheme] = useState(webDarkTheme);
+    const theme = useThemeSync();
 
-    const applyTheme = useCallback(() => {
-        if (window.toolboxAPI?.utils?.getCurrentTheme) {
-            window.toolboxAPI.utils
-                .getCurrentTheme()
-                .then((t: string) => setTheme(t === "dark" ? webDarkTheme : webLightTheme))
-                .catch(() => setTheme(webLightTheme));
-        }
-    }, []);
-
-    useEffect(() => {
-        applyTheme();
-    }, [applyTheme]);
-
-    useToolboxEvents(
-        useCallback(
-            (event) => {
-                if (event === "settings:updated") {
-                    applyTheme();
-                }
-            },
-            [applyTheme]
-        )
-    );
-
-    const [activeTab, setActiveTab] = useState<ActiveTab>("builder");
-    const [availableLanguageCodes, setAvailableLanguageCodes] = useState<number[]>([]);
-    const [envBaseLanguage, setEnvBaseLanguage] = useState<number>(DEFAULT_LANGUAGE_CODE);
-    const [settingsPanelOpen, setSettingsPanelOpen] = useState(false);
-    const [importModalOpen, setImportModalOpen] = useState(false);
-    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-    const [hasValidated, setHasValidated] = useState(false);
+    const {
+        activeTab,
+        setActiveTab,
+        settingsPanelOpen,
+        importModalOpen,
+        deleteConfirmOpen,
+        activityLogExpanded,
+        schemaNameManuallyEdited,
+        displayNameDirty,
+        setSchemaNameManuallyEdited,
+        setDisplayNameDirty,
+        openSettings,
+        closeSettings,
+        openImport,
+        closeImport,
+        openDeleteConfirm,
+        closeDeleteConfirm,
+        toggleActivityLog,
+    } = usePageOrchestration();
     const [applyOrderResult, setApplyOrderResult] = useState<{ type: "success" | "error"; text: string } | null>(null);
-    const [activityLogExpanded, setActivityLogExpanded] = useState(false);
-    const [isGridActive, setIsGridActive] = useState(false);
-    const [schemaNameManuallyEdited, setSchemaNameManuallyEdited] = useState(false);
-    const [displayNameDirty, setDisplayNameDirty] = useState(false);
     const validationPanelRef = useRef<HTMLElement>(null);
     const { connection, isLoading } = useConnection();
     const { settings, updateSettings, resetSettings, isLoading: settingsLoading } = useSettings();
     const { state, actions } = useOptionSetBuilder(settings.validateBlankTranslationRows, settings.autoGenerateCode, settings.autoGenerateDebounceMs);
     const { entries: activityEntries, addEntry: addActivityEntry } = useActivityLog();
-    // Intentionally recreate the service (and clear its cache) when the connection changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    const metadataService = useMemo(() => new DataverseMetadataService(window.dataverseAPI), [connection]);
-    const saveLoadHook = useSaveLoad(state.draft, state.issues, connection, state.dirtyRowIds, state.loadedOptionValues, actions, metadataService);
-
-    useEffect(() => {
-        setHasValidated(false);
-    }, [state.draft]);
-
-    useEffect(() => {
-        if (!settingsLoading) {
-            actions.setField("defaultLanguageCode", settings.defaultLanguageCode);
-        }
+    // Recreate the service on connection change; clearCache drops stale data from the previous environment
+    const metadataService = useMemo(
+        () => {
+            const svc = new DataverseMetadataService(window.dataverseAPI);
+            svc.clearCache();
+            return svc;
+        },
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [settings.defaultLanguageCode, settingsLoading]);
+        [connection]
+    );
+    const { isGridActive, activate: activateGrid, deactivate: deactivateGrid } = useGridActiveState(state.draft.operation);
+    // Bumped when option sets are created / deleted so the sidebar picker reloads its list
+    const [globalOptionSetsVersion, setGlobalOptionSetsVersion] = useState(0);
+    const saveLoadHook = useSaveLoad(state.draft, state.issues, connection, state.dirtyRowIds, state.loadedOptionValues, actions, metadataService, {
+        onGlobalOptionSetsChanged: (selected) => {
+            setGlobalOptionSetsVersion((version) => version + 1);
+            actions.updateMetadataSelection({ selectedGlobalOptionSetName: selected });
+        },
+        onOptionSetDeleted: deactivateGrid,
+    });
 
-    useEffect(() => {
-        metadataService.clearCache();
-    }, [connection, metadataService]);
-
-    useEffect(() => {
-        if (state.importWarnings.length === 0) return;
-        window.toolboxAPI?.utils?.showNotification?.({
-            title: "Import Warnings",
-            body: state.importWarnings.join("\n"),
-            type: "warning",
-            duration: 5000,
-        });
-    }, [state.importWarnings]);
-
-    useEffect(() => {
-        if (!connection) {
-            setAvailableLanguageCodes([]);
-            setEnvBaseLanguage(DEFAULT_LANGUAGE_CODE);
-            actions.setAvailableLanguageCodes([]);
-            return;
-        }
-        Promise.all([metadataService.getAvailableLanguages(), metadataService.getBaseLanguage()])
-            .then(([codes, baseLanguage]) => {
-                setAvailableLanguageCodes(codes);
-                setEnvBaseLanguage(baseLanguage);
-                actions.setAvailableLanguageCodes(codes);
-            })
-            .catch(() => {
-                setAvailableLanguageCodes([DEFAULT_LANGUAGE_CODE]);
-                setEnvBaseLanguage(DEFAULT_LANGUAGE_CODE);
-                actions.setAvailableLanguageCodes([DEFAULT_LANGUAGE_CODE]);
-            });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [connection, metadataService]);
+    const { hasValidated, setHasValidated } = useHasValidated(state.draft);
+    const handleCodesResolved = useCallback((codes: number[]) => actions.setAvailableLanguageCodes(codes), [actions]);
+    const { availableLanguageCodes, envBaseLanguage } = useEnvironmentLanguages(connection, metadataService, handleCodesResolved);
+    const syncDefaultLanguageCode = useCallback((code: number) => actions.setField("defaultLanguageCode", code), [actions]);
+    useDefaultLanguageSync(settings.defaultLanguageCode, settingsLoading, syncDefaultLanguageCode);
+    useImportWarningNotification(state.importWarnings);
+    const setSchemaNameField = useCallback((value: string) => actions.setField("optionSetSchemaName", value), [actions]);
+    useAutoSchemaName(state.draft, schemaNameManuallyEdited, setSchemaNameField);
 
     const handleValidate = useCallback((): void => {
         setActiveTab("builder");
@@ -357,10 +298,21 @@ export function App(): JSX.Element {
         setTimeout(() => {
             validationPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
         }, 50);
-    }, []);
+    }, [setActiveTab, setHasValidated]);
 
-    const errorCount = state.issues.filter((i) => i.severity === "error").length;
-    const warningCount = state.issues.filter((i) => i.severity === "warning").length;
+    const [reviewOpen, setReviewOpen] = useState(false);
+    // An existing option set with nothing changed has nothing to save
+    const nothingToSave = state.draft.operation === "update" && !state.hasUnsavedChanges;
+    const { handleSave } = saveLoadHook.handlers;
+    const handleSaveClick = useCallback(() => {
+        if (settings.reviewBeforeSave) setReviewOpen(true);
+        else void handleSave();
+    }, [settings.reviewBeforeSave, handleSave]);
+    const handleReviewConfirm = useCallback(() => {
+        setReviewOpen(false);
+        void handleSave();
+    }, [handleSave]);
+
     const singleLanguageMode = availableLanguageCodes.length <= 1;
 
     const connectionText = connection?.name ?? (isLoading ? "Checking connection\u2026" : "No active Dataverse connection.");
@@ -372,7 +324,7 @@ export function App(): JSX.Element {
             buttons.push({
                 key: "import",
                 element: (
-                    <Button key="import" size="small" icon={<ArrowImportRegular />} onClick={() => setImportModalOpen(true)} title="Import option values" aria-label="Import option values">
+                    <Button key="import" size="small" icon={<ArrowImportRegular />} onClick={openImport} title="Import option values" aria-label="Import option values">
                         Import
                     </Button>
                 ),
@@ -383,7 +335,7 @@ export function App(): JSX.Element {
             buttons.push({
                 key: "delete",
                 element: (
-                    <Button key="delete" appearance="subtle" size="small" icon={<DeleteRegular />} onClick={() => setDeleteConfirmOpen(true)} title="Delete option set" aria-label="Delete option set">
+                    <Button key="delete" appearance="subtle" size="small" icon={<DeleteRegular />} onClick={openDeleteConfirm} title="Delete option set" aria-label="Delete option set">
                         Delete Option Set
                     </Button>
                 ),
@@ -402,8 +354,8 @@ export function App(): JSX.Element {
         buttons.push({
             key: "save",
             element: (
-                <Tooltip key="save" content={saveLoadHook.computed.saveTooltip} relationship="description">
-                    <Button appearance="primary" size="small" onClick={() => void saveLoadHook.handlers.handleSave()} disabled={saveLoadHook.computed.saveButtonDisabled}>
+                <Tooltip key="save" content={nothingToSave ? "No changes to save" : saveLoadHook.computed.saveTooltip} relationship="description">
+                    <Button appearance="primary" size="small" onClick={handleSaveClick} disabled={saveLoadHook.computed.saveButtonDisabled || nothingToSave}>
                         {saveLoadHook.computed.saveButtonLabel}
                     </Button>
                 </Tooltip>
@@ -414,22 +366,33 @@ export function App(): JSX.Element {
     }, [
         activeTab,
         handleValidate,
+        openImport,
+        openDeleteConfirm,
         saveLoadHook.computed.saveButtonDisabled,
         saveLoadHook.computed.saveButtonLabel,
         saveLoadHook.computed.saveTooltip,
-        saveLoadHook.handlers,
+        handleSaveClick,
+        nothingToSave,
         state.draft.operation,
         state.draft.scope,
     ]);
 
-    const handleGlobalOptionSetLoaded = useCallback((detail: Parameters<typeof saveLoadHook.handlers.handleLoadConfirm>[0]) => {
-        saveLoadHook.handlers.handleLoadConfirm(detail);
-        addActivityEntry(`Loaded "${detail.DisplayName || detail.Name}"`, "loaded");
-    }, [saveLoadHook.handlers, addActivityEntry]);
-    const handleLocalChoiceLoaded = useCallback((detail: Parameters<typeof saveLoadHook.handlers.handleLocalChoiceConfirm>[0]) => {
-        saveLoadHook.handlers.handleLocalChoiceConfirm(detail);
-        addActivityEntry(`Loaded local choice "${detail.attributeDisplayName || detail.attributeLogicalName}"`, "loaded");
-    }, [saveLoadHook.handlers, addActivityEntry]);
+    const handleGlobalOptionSetLoaded = useCallback(
+        (detail: Parameters<typeof saveLoadHook.handlers.handleLoadConfirm>[0]) => {
+            saveLoadHook.handlers.handleLoadConfirm(detail);
+            addActivityEntry(`Loaded "${detail.DisplayName || detail.Name}"`, "loaded");
+        },
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [saveLoadHook.handlers, addActivityEntry]
+    );
+    const handleLocalChoiceLoaded = useCallback(
+        (detail: Parameters<typeof saveLoadHook.handlers.handleLocalChoiceConfirm>[0]) => {
+            saveLoadHook.handlers.handleLocalChoiceConfirm(detail);
+            addActivityEntry(`Loaded local choice "${detail.attributeDisplayName || detail.attributeLogicalName}"`, "loaded");
+        },
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [saveLoadHook.handlers, addActivityEntry]
+    );
 
     const handleApplyOrder = useCallback(async () => {
         try {
@@ -453,66 +416,64 @@ export function App(): JSX.Element {
         }
     }, [state.draft]);
 
+    // resetDraft keeps the sidebar's publisher / solution so the next option set starts with the same context
     const handleNew = useCallback(() => {
         actions.resetDraft();
-        actions.resetMetadataSelection();
         setSchemaNameManuallyEdited(false);
         setDisplayNameDirty(false);
         setHasValidated(false);
-        setIsGridActive(true);
+        activateGrid();
         addActivityEntry("New option set started", "reset");
-    }, [actions, addActivityEntry]);
+    }, [actions, addActivityEntry, activateGrid, setHasValidated, setSchemaNameManuallyEdited, setDisplayNameDirty]);
 
     const handleResetDraft = useCallback(() => {
         actions.resetDraft();
-        setIsGridActive(false);
+        setSchemaNameManuallyEdited(false);
+        setDisplayNameDirty(false);
+        setHasValidated(false);
+        deactivateGrid();
         addActivityEntry("Form reset", "reset");
-    }, [actions, addActivityEntry]);
+    }, [actions, addActivityEntry, deactivateGrid, setHasValidated, setSchemaNameManuallyEdited, setDisplayNameDirty]);
 
-    // Activate grid automatically when an option set is loaded from Dataverse
-    useEffect(() => {
-        if (state.draft.operation === "update") {
-            setIsGridActive(true);
-        }
-    }, [state.draft.operation]);
+    const handleImport = useCallback(
+        (text: string, extension: string) => {
+            const outcome = actions.importFromText(text, extension);
+            // Importing with nothing open starts a new option set from the imported rows
+            if (outcome.ok) activateGrid();
+            return outcome;
+        },
+        [actions, activateGrid]
+    );
 
-    const handleDisplayNameChange = (value: string): void => {
-        setDisplayNameDirty(true);
-        actions.setField("displayName", value);
-        if (!schemaNameManuallyEdited && state.draft.publisherPrefix && state.draft.operation !== "update") {
-            const pascalCase = value
-                .split(/[\s_-]+/)
-                .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-                .join("");
-            actions.setField("optionSetSchemaName", state.draft.publisherPrefix + "_" + pascalCase);
-        }
-    };
-
-    const handleSchemaNameChange = (value: string): void => {
-        setSchemaNameManuallyEdited(true);
-        actions.setField("optionSetSchemaName", value);
-    };
-
-    useEffect(() => {
-        if (state.draft.operation === "update") return;
-        const { publisherPrefix, displayName, optionSetSchemaName } = state.draft;
-        if (publisherPrefix && !schemaNameManuallyEdited && displayName) {
-            if (!optionSetSchemaName.startsWith(publisherPrefix + "_")) {
-                const pascalCase = displayName
-                    .split(/[\s_-]+/)
-                    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-                    .join("");
-                actions.setField("optionSetSchemaName", publisherPrefix + "_" + pascalCase);
+    const handleDisplayNameChange = useCallback(
+        (value: string): void => {
+            setDisplayNameDirty(true);
+            actions.setField("displayName", value);
+            if (!schemaNameManuallyEdited && state.draft.publisherPrefix && state.draft.operation !== "update") {
+                actions.setField("optionSetSchemaName", deriveSchemaName(state.draft.publisherPrefix, value));
             }
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [state.draft.publisherPrefix, state.draft.displayName, state.draft.optionSetSchemaName, state.draft.operation, schemaNameManuallyEdited]);
+        },
+        [actions, schemaNameManuallyEdited, state.draft.publisherPrefix, state.draft.operation, setDisplayNameDirty]
+    );
 
-    const getFieldError = (fieldPath: string): string | undefined => {
-        if (!hasValidated) return undefined;
-        if (fieldPath === "displayName" && !displayNameDirty) return undefined;
-        return state.issues.find((issue) => issue.fieldPath === fieldPath)?.message;
-    };
+    const handleSchemaNameChange = useCallback(
+        (value: string): void => {
+            setSchemaNameManuallyEdited(true);
+            actions.setField("optionSetSchemaName", value);
+        },
+        [actions, setSchemaNameManuallyEdited]
+    );
+
+    // useAutoSchemaName above handles publisher-prefix changes; no effect needed here
+
+    const getFieldError = useCallback(
+        (fieldPath: string): string | undefined => {
+            if (!hasValidated) return undefined;
+            if (fieldPath === "displayName" && !displayNameDirty) return undefined;
+            return state.issues.find((issue) => issue.fieldPath === fieldPath)?.message;
+        },
+        [hasValidated, displayNameDirty, state.issues]
+    );
 
     const [refreshMetadataSignal, setRefreshMetadataSignal] = useState(0);
     const handleRefreshMetadata = useCallback(() => setRefreshMetadataSignal((s) => s + 1), []);
@@ -524,17 +485,16 @@ export function App(): JSX.Element {
                     <SidebarPanel
                         draft={state.draft}
                         metadataSelection={state.metadataSelection}
+                        isGridActive={isGridActive}
+                        hasUnsavedChanges={state.hasUnsavedChanges}
                         connection={connection}
                         isLoading={isLoading}
                         showSystemOptionSets={settings.showSystemOptionSets}
                         settingsLoading={settingsLoading}
                         activityEntries={activityEntries}
                         activityLogExpanded={activityLogExpanded}
-                        onActivityLogToggle={() => setActivityLogExpanded((p) => !p)}
+                        onActivityLogToggle={toggleActivityLog}
                         onToggleShowSystemOptionSets={(v) => void updateSettings({ showSystemOptionSets: v })}
-                        hasValidated={hasValidated}
-                        schemaNameManuallyEdited={schemaNameManuallyEdited}
-                        displayNameDirty={displayNameDirty}
                         getFieldError={getFieldError}
                         onSetField={actions.setField}
                         onUpdateMetadataSelection={actions.updateMetadataSelection}
@@ -553,19 +513,11 @@ export function App(): JSX.Element {
                             }
                         }}
                         refreshMetadataSignal={refreshMetadataSignal}
+                        globalOptionSetsVersion={globalOptionSetsVersion}
                     />
 
                     <main className={styles.main} aria-label="Option set editor">
-                        <nav className={styles.tabNavigation} aria-label="Option set editor tabs">
-                            <TabList selectedValue={activeTab} onTabSelect={(_, data) => setActiveTab(data.value as ActiveTab)} aria-label="Option set editor tabs">
-                                <Tab value="builder">Builder</Tab>
-                                <Tab value="code">Code</Tab>
-                            </TabList>
-
-                            <div className={styles.tabSpacer} />
-
-                            <Button size="small" icon={<SettingsRegular />} onClick={() => setSettingsPanelOpen(true)} title="Open settings" aria-label="Open settings" />
-                        </nav>
+                        <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} onOpenSettings={openSettings} />
 
                         <ActionBar actionButtons={actionButtons} onRefreshMetadata={handleRefreshMetadata} />
 
@@ -614,6 +566,9 @@ export function App(): JSX.Element {
                                         autoAddAllLanguages={settings.autoAddAllLanguages}
                                         autoAddEnglishSubrow={settings.primaryLanguageMode === "environmentDefault" && settings.autoAddEnglishSubrow}
                                         dirtyRowIds={state.dirtyRowIds}
+                                        lockedValues={state.loadedOptionValues}
+                                        changeSet={state.changeSet}
+                                        onRestoreRow={actions.restoreRow}
                                         reorderingAlwaysOn={settings.reorderingAlwaysOn}
                                     />
                                 ) : (
@@ -637,7 +592,7 @@ export function App(): JSX.Element {
 
                 <SettingsPanel
                     isOpen={settingsPanelOpen}
-                    onClose={() => setSettingsPanelOpen(false)}
+                    onClose={closeSettings}
                     settings={settings}
                     onUpdateSettings={updateSettings}
                     onResetSettings={resetSettings}
@@ -645,31 +600,26 @@ export function App(): JSX.Element {
                     envBaseLanguage={envBaseLanguage}
                 />
 
-                <ImportModal
-                    open={importModalOpen}
-                    onClose={() => setImportModalOpen(false)}
-                    onImport={actions.importFromText}
-                    onClearWarnings={actions.clearImportWarnings}
-                    warnings={state.importWarnings}
+                <ImportModal open={importModalOpen} onClose={closeImport} onImport={handleImport} onClearWarnings={actions.clearImportWarnings} warnings={state.importWarnings} />
+
+                <SaveReviewDialog
+                    open={reviewOpen}
+                    draft={state.draft}
+                    changeSet={state.changeSet}
+                    onRevertRow={actions.revertRow}
+                    onRestoreRow={actions.restoreRow}
+                    onRevertOrder={actions.revertOrder}
+                    onConfirm={handleReviewConfirm}
+                    onCancel={() => setReviewOpen(false)}
                 />
 
-                <Dialog open={saveLoadHook.state.conflictDialog.open}>
-                    <DialogSurface>
-                        <DialogTitle>Conflict Detected</DialogTitle>
-                        <DialogBody>
-                            <DialogContent>
-                                The option set was modified in Dataverse since you loaded it. Remote has {saveLoadHook.state.conflictDialog.remoteOptionCount} options; you have{" "}
-                                {saveLoadHook.state.conflictDialog.localOptionCount}. Saving will overwrite the remote changes.
-                            </DialogContent>
-                            <DialogActions>
-                                <Button appearance="primary" onClick={saveLoadHook.handlers.confirmOverwrite}>
-                                    Overwrite Anyway
-                                </Button>
-                                <Button onClick={saveLoadHook.handlers.cancelConflict}>Cancel</Button>
-                            </DialogActions>
-                        </DialogBody>
-                    </DialogSurface>
-                </Dialog>
+                <ConflictDialog
+                    open={saveLoadHook.state.conflictDialog.open}
+                    addedRemotely={saveLoadHook.state.conflictDialog.addedRemotely}
+                    removedRemotely={saveLoadHook.state.conflictDialog.removedRemotely}
+                    onConfirm={saveLoadHook.handlers.confirmOverwrite}
+                    onCancel={saveLoadHook.handlers.cancelConflict}
+                />
 
                 <ConfirmDialog
                     open={deleteConfirmOpen}
@@ -679,10 +629,10 @@ export function App(): JSX.Element {
                     confirmIntent="danger"
                     cancelLabel="Cancel"
                     onConfirm={async () => {
-                        setDeleteConfirmOpen(false);
+                        closeDeleteConfirm();
                         await saveLoadHook.handlers.handleDeleteOptionSet();
                     }}
-                    onCancel={() => setDeleteConfirmOpen(false)}
+                    onCancel={closeDeleteConfirm}
                 />
             </div>
         </FluentProvider>

@@ -29,6 +29,8 @@ export interface OptionSetDraft {
     defaultLanguageCode: number;
     entityLogicalName: string;
     attributeLogicalName: string;
+    /** Set when a local column is backed by a global choice; option edits must then target the global set. */
+    globalOptionSetName?: string;
     rows: OptionDraftRow[];
 }
 
@@ -66,6 +68,7 @@ export interface OptionSetOperationResult {
         failed: number;
     };
     rows: OperationResultRow[];
+    warnings?: string[];
 }
 
 export interface ToolPreferences {
@@ -103,6 +106,9 @@ export interface OptionMetadata {
             LanguageCode: number;
         }>;
     };
+    Color?: string;
+    IsHidden?: boolean;
+    ExternalValue?: string;
 }
 
 export interface GlobalOptionSetDetail extends GlobalOptionSetSummary {
@@ -114,14 +120,20 @@ export interface LocalChoiceDetail {
     attributeLogicalName: string;
     attributeDisplayName: string;
     options: OptionMetadata[];
+    isGlobal?: boolean;
+    optionSetName?: string;
 }
+
+export type LocalMode = "local" | "localGlobal";
 
 export type OperationStatus = "idle" | "validating" | "saving" | "loading" | "success" | "error";
 
 export interface ConflictDialogState {
     open: boolean;
-    remoteOptionCount: number;
-    localOptionCount: number;
+    /** Option values present in Dataverse that were not there when the set was loaded */
+    addedRemotely: number;
+    /** Option values that were loaded but no longer exist in Dataverse */
+    removedRemotely: number;
 }
 
 export interface SaveLoadState {

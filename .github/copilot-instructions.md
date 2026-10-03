@@ -6,9 +6,6 @@ This repo is a Power Platform ToolBox tool for managing Dataverse OptionSets (ch
 
 - Stack: React 18, TypeScript, Vite, Fluent UI React v9
 - Runtime: runs in a PPTB BrowserView via `file://` and must work inside the app host
-- Platform access: prefer `window.toolboxAPI` and `window.dataverseAPI`; do not reach out to arbitrary external endpoints
-- Theming: support light and dark themes through Fluent UI providers
-- If a required API is unavailable at runtime, surface a Fluent UI `MessageBar` with `intent="error"` explaining that the tool must be opened inside PPTB, rather than throwing an unhandled error.
 
 ## Rules
 
@@ -26,6 +23,7 @@ This repo is a Power Platform ToolBox tool for managing Dataverse OptionSets (ch
 
 - PPTB tool workflow and validation: `pptb-tool-dev` skill
 - UI styling rules: `fluentui-styling` skill
+- optionset api: `optionset-web-api` skill
 - Build and usage scripts: `README.md` and `package.json`
 
 ## Minimum standards
@@ -33,3 +31,4 @@ This repo is a Power Platform ToolBox tool for managing Dataverse OptionSets (ch
 - Keep changes directly relevant to the task.
 - Update touched imports and exports.
 - Validate the affected build path before finishing work.
+- Increase patch version for minor changes

@@ -4,7 +4,7 @@
  * Manages application settings using toolboxAPI.settings for persistence.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_SETTINGS, OptionSetManagerSettings } from "../models/settingsModels";
 
 const SETTINGS_KEY = "optionset-manager-settings";
@@ -21,6 +21,9 @@ export function useSettings(): UseSettingsResult {
     const [settings, setSettings] = useState<OptionSetManagerSettings>(DEFAULT_SETTINGS);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    // Always-current ref so updateSettings doesn't close over a stale settings value
+    const settingsRef = useRef(settings);
+    settingsRef.current = settings;
 
     const loadSettings = useCallback(async (): Promise<void> => {
         try {
@@ -51,7 +54,7 @@ export function useSettings(): UseSettingsResult {
     const updateSettings = useCallback(
         async (partial: Partial<OptionSetManagerSettings>): Promise<void> => {
             try {
-                const updated = { ...settings, ...partial };
+                const updated = { ...settingsRef.current, ...partial };
                 await window.toolboxAPI.settings.set(SETTINGS_KEY, updated);
                 setSettings(updated);
                 setError(null);
@@ -67,7 +70,7 @@ export function useSettings(): UseSettingsResult {
                 throw new Error(message, { cause: err });
             }
         },
-        [settings]
+        [] // stable — reads latest settings via ref
     );
 
     const resetSettings = useCallback(async (): Promise<void> => {

@@ -1,9 +1,10 @@
 {
     "name": "pptb-optionset-manager",
-    "version": "0.3.8",
+    "version": "0.3.9",
     "type": "module",
     "displayName": "OptionSet Manager",
     "description": "Create, modify, and manage local and global Dataverse OptionSets (Choice fields) with bulk operations, import/export, and multi-language support.",
+    "author": "Matt Berg",
     "main": "index.html",
     "icon": "assets/icon.svg",
     "license": "MIT",

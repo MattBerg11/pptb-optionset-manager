@@ -1,6 +1,7 @@
 import { DEFAULT_LANGUAGE_CODE } from "../constants";
 import type {
   ImportParseResult,
+  JsonImportRow,
   JsonImportShape,
 } from "../models/importModels";
 import type {
@@ -10,10 +11,7 @@ import type {
   OptionSetOperation,
   OptionSetScope,
 } from "../models/optionSetModels";
-
-function createRowId(): string {
-  return `row-${Math.random().toString(36).slice(2, 9)}`;
-}
+import { createRowId } from "../utils/createRowId";
 
 function parseNumber(value: string | undefined): number | undefined {
   if (!value) {
@@ -41,7 +39,9 @@ function normalizeOperation(value: string | undefined): OptionSetOperation {
   return "upsert";
 }
 
-function createBaseDraft(): OptionSetDraft {
+function createBaseDraft(
+  defaultLanguageCode: number = DEFAULT_LANGUAGE_CODE,
+): OptionSetDraft {
   return {
     scope: "global",
     operation: "upsert",
@@ -50,8 +50,8 @@ function createBaseDraft(): OptionSetDraft {
     description: "",
     solutionUniqueName: "",
     publisherPrefix: "",
-    optionValuePrefix: 98922,
-    defaultLanguageCode: DEFAULT_LANGUAGE_CODE,
+    optionValuePrefix: 0,
+    defaultLanguageCode,
     entityLogicalName: "",
     attributeLogicalName: "",
     rows: [],
@@ -93,9 +93,14 @@ function parseCsv(text: string): string[][] {
 function normalizeCsvRows(
   header: string[],
   bodyRows: string[][],
+  defaultLanguageCode: number,
 ): OptionDraftRow[] {
   const normalizedHeader = header.map((column) => column.toLowerCase());
-  const optionValueIndex = normalizedHeader.indexOf("optionvalue");
+  // "value" is accepted as shorthand for "optionvalue"
+  const optionValueIndex = Math.max(
+    normalizedHeader.indexOf("optionvalue"),
+    normalizedHeader.indexOf("value"),
+  );
   const externalKeyIndex = normalizedHeader.indexOf("externalkey");
   const labelIndexes = normalizedHeader
     .map((value, index) => ({ value, index }))
@@ -103,6 +108,9 @@ function normalizeCsvRows(
   const descriptionIndexes = normalizedHeader
     .map((value, index) => ({ value, index }))
     .filter((column) => column.value.startsWith("description_"));
+  // Plain "label" / "description" columns apply to the default language
+  const plainLabelIndex = normalizedHeader.indexOf("label");
+  const plainDescriptionIndex = normalizedHeader.indexOf("description");
 
   return bodyRows.map((row) => {
     const labels: LanguageEntry[] = [];
@@ -125,6 +133,18 @@ function normalizeCsvRows(
       });
     });
 
+    if (
+      plainLabelIndex >= 0 &&
+      !labels.some((l) => l.languageCode === defaultLanguageCode)
+    ) {
+      labels.unshift({
+        languageCode: defaultLanguageCode,
+        label: row[plainLabelIndex] ?? "",
+        description:
+          plainDescriptionIndex >= 0 ? (row[plainDescriptionIndex] ?? "") : "",
+      });
+    }
+
     return {
       rowId: createRowId(),
       optionValue: parseNumber(
@@ -136,8 +156,12 @@ function normalizeCsvRows(
   });
 }
 
-function mapJsonToDraft(shape: JsonImportShape): OptionSetDraft {
-  const draft = createBaseDraft();
+function mapJsonToDraft(
+  input: JsonImportShape | JsonImportRow[],
+  defaultLanguageCode: number,
+): OptionSetDraft {
+  const shape: JsonImportShape = Array.isArray(input) ? { rows: input } : input;
+  const draft = createBaseDraft(defaultLanguageCode);
 
   draft.scope = normalizeScope(shape.scope);
   draft.operation = normalizeOperation(shape.operation);
@@ -146,22 +170,32 @@ function mapJsonToDraft(shape: JsonImportShape): OptionSetDraft {
   draft.description = shape.description ?? "";
   draft.solutionUniqueName = shape.solutionUniqueName ?? "";
   draft.publisherPrefix = shape.publisherPrefix ?? "";
-  draft.optionValuePrefix = shape.optionValuePrefix ?? 98922;
-  draft.defaultLanguageCode =
-    shape.defaultLanguageCode ?? DEFAULT_LANGUAGE_CODE;
+  draft.optionValuePrefix = shape.optionValuePrefix ?? 0;
+  draft.defaultLanguageCode = shape.defaultLanguageCode ?? defaultLanguageCode;
   draft.entityLogicalName = shape.entityLogicalName ?? "";
   draft.attributeLogicalName = shape.attributeLogicalName ?? "";
 
-  draft.rows = (shape.rows ?? []).map((row) => ({
-    rowId: createRowId(),
-    optionValue: row.optionValue,
-    externalKey: row.externalKey,
-    labels: (row.labels ?? []).map((label) => ({
+  draft.rows = (shape.rows ?? []).map((row) => {
+    const labels: LanguageEntry[] = (row.labels ?? []).map((label) => ({
       languageCode: label.languageCode ?? draft.defaultLanguageCode,
       label: label.label ?? "",
       description: label.description ?? "",
-    })),
-  }));
+    }));
+    // { "value": 1, "label": "Low" } shorthand => default-language label
+    if (labels.length === 0 && row.label !== undefined) {
+      labels.push({
+        languageCode: draft.defaultLanguageCode,
+        label: row.label,
+        description: row.description ?? "",
+      });
+    }
+    return {
+      rowId: createRowId(),
+      optionValue: row.optionValue ?? row.value,
+      externalKey: row.externalKey,
+      labels,
+    };
+  });
 
   return draft;
 }
@@ -169,18 +203,29 @@ function mapJsonToDraft(shape: JsonImportShape): OptionSetDraft {
 export function parseImportText(
   text: string,
   extension: string,
+  defaultLanguageCode: number = DEFAULT_LANGUAGE_CODE,
 ): ImportParseResult {
   const warnings: string[] = [];
   const normalizedExtension = extension.toLowerCase();
 
   try {
     if (normalizedExtension === "json") {
-      const parsed = JSON.parse(text) as JsonImportShape;
+      const parsed = JSON.parse(text) as JsonImportShape | JsonImportRow[];
+      const draft = mapJsonToDraft(parsed, defaultLanguageCode);
+      if (draft.rows.length === 0) {
+        return {
+          ok: false,
+          warnings,
+          errors: [
+            'No rows found. Provide an array of rows, or an object with a "rows" array.',
+          ],
+        };
+      }
       return {
         ok: true,
         warnings,
         errors: [],
-        draft: mapJsonToDraft(parsed),
+        draft,
       };
     }
 
@@ -195,11 +240,20 @@ export function parseImportText(
       }
 
       const [header, ...rows] = csvRows;
-      const draft = createBaseDraft();
-      draft.rows = normalizeCsvRows(header, rows);
+      const draft = createBaseDraft(defaultLanguageCode);
+      draft.rows = normalizeCsvRows(header, rows, defaultLanguageCode);
+      if (!draft.rows.some((row) => row.labels.length > 0)) {
+        return {
+          ok: false,
+          warnings,
+          errors: [
+            'No label column found. Use a "label" column (default language) or "label_<lcid>" columns such as label_1033.',
+          ],
+        };
+      }
 
       warnings.push(
-        "CSV import only supplies row data. Fill metadata fields in Builder before apply.",
+        "CSV import only supplies row data. Name, solution and publisher come from the sidebar.",
       );
       return {
         ok: true,

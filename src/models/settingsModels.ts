@@ -1,4 +1,4 @@
-import { DEFAULT_LANGUAGE_CODE, DEFAULT_SORT_LANGUAGES_BY_CODE, DEFAULT_VISIBLE_LANGUAGE_CODES } from "../components/languages/languageConfig";
+import { DEFAULT_LANGUAGE_CODE, DEFAULT_SORT_LANGUAGES_BY_CODE, DEFAULT_VISIBLE_LANGUAGE_CODES } from "../constants";
 
 /**
  * Settings Models
@@ -59,6 +59,9 @@ export interface OptionSetManagerSettings {
 
     /** When true, row reordering controls are always visible; when false a toggle button controls them. */
     reorderingAlwaysOn: boolean;
+
+    /** Show a changelog (with per-row revert) and ask for confirmation before saving. */
+    reviewBeforeSave: boolean;
 }
 
 export const DEFAULT_SETTINGS: OptionSetManagerSettings = {
@@ -68,7 +71,6 @@ export const DEFAULT_SETTINGS: OptionSetManagerSettings = {
     autoAddEnglishSubrow: false,
     defaultLanguageCode: DEFAULT_LANGUAGE_CODE,
     sortLanguagesByCode: DEFAULT_SORT_LANGUAGES_BY_CODE,
-    visibleLanguageCodes: [...DEFAULT_VISIBLE_LANGUAGE_CODES],
     showSystemOptionSets: true,
     validateBlankTranslationRows: true,
     autoAddAllLanguages: false,
@@ -77,4 +79,6 @@ export const DEFAULT_SETTINGS: OptionSetManagerSettings = {
     autoExpandSubrowsOnAdd: false,
     autoAddAllLanguagesOnAdd: false,
     reorderingAlwaysOn: false,
+    reviewBeforeSave: true,
+    visibleLanguageCodes: [...DEFAULT_VISIBLE_LANGUAGE_CODES],
 };
