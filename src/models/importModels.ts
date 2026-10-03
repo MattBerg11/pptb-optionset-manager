@@ -24,13 +24,20 @@ export interface JsonImportShape {
   defaultLanguageCode?: number;
   entityLogicalName?: string;
   attributeLogicalName?: string;
-  rows?: Array<{
-    optionValue?: number;
-    externalKey?: string;
-    labels?: Array<{
-      languageCode?: number;
-      label?: string;
-      description?: string;
-    }>;
+  rows?: JsonImportRow[];
+}
+
+export interface JsonImportRow {
+  optionValue?: number;
+  /** Shorthand for optionValue */
+  value?: number;
+  externalKey?: string;
+  /** Shorthand for a single default-language label */
+  label?: string;
+  description?: string;
+  labels?: Array<{
+    languageCode?: number;
+    label?: string;
+    description?: string;
   }>;
 }

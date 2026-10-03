@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { DEFAULT_LANGUAGE_CODE } from "../constants.ts";
-import type { DataverseMetadataService } from "../api/dataverseMetadata";
+import type { DataverseMetadataService } from "../services/dataverseMetadataService";
 
 interface EnvironmentLanguages {
     availableLanguageCodes: number[];

@@ -27,10 +27,11 @@ import {
     tokens,
 } from "@fluentui/react-components";
 import { DismissRegular, FilterRegular } from "@fluentui/react-icons";
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChoiceAttribute, DataverseMetadataService, Entity, Publisher, Solution } from "../../api/dataverseMetadata";
+import { useCallback, useRef, useState } from "react";
+import type { DataverseMetadataService } from "../../services/dataverseMetadataService";
 import type { MetadataSelection } from "../../models/metadataModels";
-import type { GlobalOptionSetDetail, GlobalOptionSetSummary, LocalChoiceDetail, OptionSetOperation, OptionSetScope } from "../../models/optionSetModels";
+import type { GlobalOptionSetDetail, LocalChoiceDetail, OptionSetOperation, OptionSetScope } from "../../models/optionSetModels";
+import { useMetadataData } from "../../hooks/useMetadataData";
 
 const useStyles = makeStyles({
     root: {
@@ -110,10 +111,12 @@ interface MetadataSelectorProps {
     onGlobalOptionSetLoaded?: (detail: GlobalOptionSetDetail) => void;
     onLocalChoiceLoaded?: (detail: LocalChoiceDetail) => void;
     onActivityEntry?: (message: string, type: "added" | "removed" | "changed" | "loaded" | "reset") => void;
-    draftDisplayName?: string;
-    draftSchemaName?: string;
+    /** Hide the "pick an existing option set" control while a brand-new option set is being authored */
+    showOptionSetPicker?: boolean;
     isFormDirty?: boolean;
     refreshSignal?: number;
+    /** Bumped when option sets are created or deleted so the picker list reloads */
+    globalOptionSetsVersion?: number;
 }
 
 export function MetadataSelector({
@@ -126,201 +129,35 @@ export function MetadataSelector({
     onGlobalOptionSetLoaded,
     onLocalChoiceLoaded,
     onActivityEntry,
-    draftDisplayName = "",
-    draftSchemaName = "",
+    showOptionSetPicker = true,
     isFormDirty = false,
     refreshSignal,
+    globalOptionSetsVersion,
 }: MetadataSelectorProps): JSX.Element {
     const styles = useStyles();
-    const [publishers, setPublishers] = useState<Publisher[]>([]);
-    const [solutions, setSolutions] = useState<Solution[]>([]);
-    const [entities, setEntities] = useState<Entity[]>([]);
-    const [attributes, setAttributes] = useState<ChoiceAttribute[]>([]);
-    const [globalOptionSets, setGlobalOptionSets] = useState<GlobalOptionSetSummary[]>([]);
     const [optionSetFilter, setOptionSetFilter] = useState("");
     const [filterMode, setFilterMode] = useState<"none" | "publisher" | "solution" | "both">("none");
-
-    const [loadingKeys, setLoadingKeys] = useState<Set<string>>(new Set());
-    const setLoading = (key: string, val: boolean) =>
-        setLoadingKeys((prev) => {
-            const s = new Set(prev);
-            if (val) s.add(key);
-            else s.delete(key);
-            return s;
-        });
-    const isLoading = (key: string) => loadingKeys.has(key);
-    const narrowListboxStyle = { minWidth: "14rem", maxWidth: "20rem", width: "max-content" } as const;
-    const wideListboxStyle = { minWidth: "20rem", maxWidth: "28rem", width: "max-content" } as const;
     const [pendingGlobalOptionSetName, setPendingGlobalOptionSetName] = useState<string | null>(null);
     const [confirmGlobalOptionSetChangeOpen, setConfirmGlobalOptionSetChangeOpen] = useState(false);
-
     const localChoiceGuardRef = useRef<{ cancelled: boolean } | null>(null);
     const optionSetDetailGuardRef = useRef<{ cancelled: boolean } | null>(null);
-
-    const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-    const [loadAllEntitiesClicked, setLoadAllEntitiesClicked] = useState(false);
-
-    const setFieldError = (key: string, msg: string | null): void => {
-        setFieldErrors((prev) => {
-            if (msg === null) {
-                const { [key]: _, ...rest } = prev;
-                return rest;
-            }
-            return { ...prev, [key]: msg };
-        });
-    };
-    const clearAllErrors = (): void => setFieldErrors({});
 
     // Stable ref so load callbacks don't need onActivityEntry in their deps
     const activityRef = useRef(onActivityEntry);
     activityRef.current = onActivityEntry;
 
-    const loadPublishers = useCallback(async (): Promise<void> => {
-        setLoading("publishers", true);
-        try {
-            const data = await metadataService.getPublishers();
-            setPublishers(data);
-            setFieldError("publishers", null);
-        } catch (err) {
-            const msg = err instanceof Error ? err.message : "Failed to load publishers";
-            setFieldError("publishers", msg);
-            window.toolboxAPI?.utils?.showNotification?.({
-                title: "Failed to load publishers",
-                body: msg,
-                type: "error",
-                duration: 5000,
-            });
-        } finally {
-            setLoading("publishers", false);
-        }
-    }, [metadataService]);
+    const { publishers, solutions, entities, attributes, globalOptionSets, isLoading, setLoading, fieldErrors, setFieldError, loadAllEntitiesClicked, loadAllEntities } = useMetadataData({
+        metadataService,
+        scope,
+        selection,
+        refreshSignal,
+        globalOptionSetsVersion,
+        onSelectionChange,
+        onRefresh: () => setOptionSetFilter(""),
+    });
 
-    const loadSolutions = useCallback(
-        async (publisherId: string): Promise<void> => {
-            setLoading("solutions", true);
-            try {
-                const data = await metadataService.getSolutions(publisherId);
-                setSolutions(data);
-                setFieldError("solutions", null);
-            } catch (err) {
-                setFieldError("solutions", err instanceof Error ? err.message : "Failed to load solutions");
-            } finally {
-                setLoading("solutions", false);
-            }
-        },
-        [metadataService]
-    );
-
-    const loadEntities = useCallback(
-        async (solutionUniqueName: string): Promise<void> => {
-            setLoading("entities", true);
-            try {
-                const data = await metadataService.getEntities(solutionUniqueName);
-                setEntities(data);
-                setFieldError("entities", null);
-            } catch (err) {
-                setFieldError("entities", err instanceof Error ? err.message : "Failed to load entities");
-            } finally {
-                setLoading("entities", false);
-            }
-        },
-        [metadataService]
-    );
-
-    const loadAllEntities = useCallback(async (): Promise<void> => {
-        setLoadAllEntitiesClicked(true);
-        setLoading("entities", true);
-        try {
-            const data = await metadataService.getAllEntities();
-            setEntities(data);
-            setFieldError("entities", null);
-        } catch (err) {
-            setFieldError("entities", err instanceof Error ? err.message : "Failed to load entities");
-        } finally {
-            setLoading("entities", false);
-        }
-    }, [metadataService]);
-
-    const loadAttributes = useCallback(
-        async (entityLogicalName: string): Promise<void> => {
-            setLoading("attributes", true);
-            try {
-                const data = await metadataService.getChoiceAttributes(entityLogicalName);
-                setAttributes(data);
-                setFieldError("attributes", null);
-            } catch (err) {
-                setFieldError("attributes", err instanceof Error ? err.message : "Failed to load attributes");
-            } finally {
-                setLoading("attributes", false);
-            }
-        },
-        [metadataService]
-    );
-
-    const loadGlobalOptionSets = useCallback(async (): Promise<void> => {
-        setLoading("globalOptionSets", true);
-        try {
-            const data = await metadataService.getGlobalOptionSets();
-            setGlobalOptionSets(data);
-            setFieldError("globalOptionSets", null);
-        } catch (err) {
-            setFieldError("globalOptionSets", err instanceof Error ? err.message : "Failed to load global option sets");
-        } finally {
-            setLoading("globalOptionSets", false);
-        }
-    }, [metadataService]);
-
-    useEffect(() => {
-        void loadPublishers();
-    }, [loadPublishers]);
-
-    // Load solutions whenever publisher changes (both scopes need solutions)
-    useEffect(() => {
-        if (selection.publisherId) {
-            void loadSolutions(selection.publisherId);
-        } else {
-            setSolutions([]);
-        }
-    }, [selection.publisherId, loadSolutions]);
-
-    useEffect(() => {
-        if (scope === "local" && selection.solutionId) {
-            const solutionName = solutions.find((s) => s.solutionId === selection.solutionId)?.uniqueName;
-            if (solutionName) {
-                void loadEntities(solutionName);
-            }
-        } else {
-            setEntities([]);
-            setLoadAllEntitiesClicked(false);
-        }
-    }, [scope, selection.solutionId, solutions, loadEntities]);
-
-    useEffect(() => {
-        if (scope === "local" && selection.entityLogicalName) {
-            void loadAttributes(selection.entityLogicalName);
-        } else {
-            setAttributes([]);
-        }
-    }, [scope, selection.entityLogicalName, loadAttributes]);
-
-    useEffect(() => {
-        if (scope === "global") {
-            void loadGlobalOptionSets();
-        } else {
-            setGlobalOptionSets([]);
-            setOptionSetFilter("");
-        }
-    }, [scope, loadGlobalOptionSets]);
-
-    // Trigger refresh when parent increments the signal
-    const prevRefreshSignalRef = useRef(refreshSignal ?? 0);
-    useEffect(() => {
-        if (refreshSignal !== undefined && refreshSignal !== prevRefreshSignalRef.current) {
-            prevRefreshSignalRef.current = refreshSignal;
-            handleRefresh();
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [refreshSignal]);
+    const narrowListboxStyle = { minWidth: "14rem", maxWidth: "20rem", width: "max-content" } as const;
+    const wideListboxStyle = { minWidth: "20rem", maxWidth: "28rem", width: "max-content" } as const;
 
     const handlePublisherChange = (_: unknown, data: { optionValue?: string | undefined }): void => {
         const publisherId = data.optionValue ?? "";
@@ -388,7 +225,8 @@ export function MetadataSelector({
             metadataService
                 .getLocalChoiceOptions(selection.entityLogicalName, attributeLogicalName, attribute.displayName)
                 .then((detail) => {
-                    if (!guard.cancelled) onLocalChoiceLoaded(detail);
+                    if (guard.cancelled) return;
+                    onLocalChoiceLoaded(detail);
                 })
                 .catch((err: unknown) => {
                     if (!guard.cancelled) setFieldError("attributes", err instanceof Error ? err.message : "Failed to load choice options");
@@ -419,34 +257,8 @@ export function MetadataSelector({
                 }
             }
         },
-        [metadataService, onGlobalOptionSetLoaded, onSelectionChange]
+        [metadataService, onGlobalOptionSetLoaded, onSelectionChange, setFieldError, setLoading]
     );
-
-    const handleRefresh = useCallback((): void => {
-        metadataService.clearCache();
-        onSelectionChange({
-            publisherId: null,
-            publisherName: null,
-            publisherPrefix: null,
-            optionValuePrefix: null,
-            solutionId: null,
-            solutionName: null,
-            solutionUniqueName: null,
-            entityLogicalName: null,
-            entityDisplayName: null,
-            attributeLogicalName: null,
-            attributeDisplayName: null,
-            attributeSchemaName: null,
-            selectedGlobalOptionSetName: null,
-        });
-        setSolutions([]);
-        setEntities([]);
-        setAttributes([]);
-        setGlobalOptionSets([]);
-        clearAllErrors();
-        setOptionSetFilter("");
-        void loadPublishers();
-    }, [metadataService, onSelectionChange, loadPublishers]);
 
     const filteredOptionSets = globalOptionSets
         .filter((os) => showSystemOptionSets || os.IsCustomOptionSet)
@@ -490,8 +302,8 @@ export function MetadataSelector({
         ? globalOptionSets.find((os) => os.Name === selection.selectedGlobalOptionSetName)?.DisplayName || selection.selectedGlobalOptionSetName
         : "";
 
-    // Show when an option set is already selected (to switch), or when the form is blank (ready to browse)
-    const showGlobalOptionSetDropdown = selection.selectedGlobalOptionSetName !== null || (draftDisplayName.trim() === "" && draftSchemaName.trim() === "");
+    // Driven by the sidebar's mode (browsing / editing an existing set vs. authoring a new one), not by what has been typed
+    const showGlobalOptionSetDropdown = showOptionSetPicker;
 
     const attemptGlobalOptionSetChange = (nextName: string): void => {
         if (!nextName || nextName === selection.selectedGlobalOptionSetName) {

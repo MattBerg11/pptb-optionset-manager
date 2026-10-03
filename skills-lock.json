@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "react-review": {
+      "source": "thereactfoundation/react-skills",
+      "sourceType": "github",
+      "skillPath": "skills/react-review/SKILL.md",
+      "computedHash": "ec5dd582a7a882b31e4b01180244afb09dd6cd96981f3732e361f9c24a7dccfd"
+    }
+  }
+}

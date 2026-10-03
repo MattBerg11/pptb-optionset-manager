@@ -7,6 +7,13 @@ export const DEFAULT_VISIBLE_LANGUAGE_CODES: number[] = [1033, 1036, 1031];
 export const MIN_OPTION_VALUE = -2147483648;
 export const MAX_OPTION_VALUE = 2147483647;
 
+export const GRID_VIRTUAL_THRESHOLD = 50;
+export const GRID_OVERSCAN = 8;
+export const GRID_BASE_ROW_H = 37;
+export const GRID_SUBROW_H = 37;
+export const GRID_PICKER_ROW_H = 45;
+export const GRID_ERROR_LINE_H = 20;
+
 export const SUPPORTED_IMPORT_EXTENSIONS = ["csv", "json"] as const;
 
 export const EMPTY_DRAFT_TEMPLATE: OptionSetDraft = {
@@ -17,7 +24,7 @@ export const EMPTY_DRAFT_TEMPLATE: OptionSetDraft = {
     description: "",
     solutionUniqueName: "",
     publisherPrefix: "",
-    optionValuePrefix: 98922,
+    optionValuePrefix: 0,
     defaultLanguageCode: DEFAULT_LANGUAGE_CODE,
     entityLogicalName: "",
     attributeLogicalName: "",
@@ -39,13 +46,13 @@ export const EMPTY_DRAFT_TEMPLATE: OptionSetDraft = {
 export const SAMPLE_CODE_PAYLOAD: OptionSetDraft = {
     scope: "global",
     operation: "create",
-    optionSetSchemaName: "new_priority",
+    optionSetSchemaName: "mb_priority",
     displayName: "Priority",
     description: "Priority for work items",
     solutionUniqueName: "",
     publisherPrefix: "mb",
     optionValuePrefix: 98922,
-    defaultLanguageCode: DEFAULT_LANGUAGE_CODE,
+    defaultLanguageCode: 1033,
     entityLogicalName: "",
     attributeLogicalName: "",
     rows: [
@@ -54,7 +61,7 @@ export const SAMPLE_CODE_PAYLOAD: OptionSetDraft = {
             externalKey: "LOW",
             labels: [
                 {
-                    languageCode: DEFAULT_LANGUAGE_CODE,
+                    languageCode: 1033,
                     label: "Low",
                     description: "Low priority",
                 },

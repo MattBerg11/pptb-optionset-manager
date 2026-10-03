@@ -7,7 +7,6 @@ export function usePageOrchestration() {
     const [settingsPanelOpen, setSettingsPanelOpen] = useState(false);
     const [importModalOpen, setImportModalOpen] = useState(false);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-    const [hasValidated, setHasValidated] = useState(false);
     const [activityLogExpanded, setActivityLogExpanded] = useState(false);
     const [schemaNameManuallyEdited, setSchemaNameManuallyEdited] = useState(false);
     const [displayNameDirty, setDisplayNameDirty] = useState(false);
@@ -27,15 +26,9 @@ export function usePageOrchestration() {
         settingsPanelOpen,
         importModalOpen,
         deleteConfirmOpen,
-        hasValidated,
         activityLogExpanded,
         schemaNameManuallyEdited,
         displayNameDirty,
-        setSettingsPanelOpen,
-        setImportModalOpen,
-        setDeleteConfirmOpen,
-        setHasValidated,
-        setActivityLogExpanded,
         setSchemaNameManuallyEdited,
         setDisplayNameDirty,
         openSettings,

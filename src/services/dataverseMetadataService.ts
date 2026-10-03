@@ -55,7 +55,7 @@ export interface ChoiceAttribute {
     schemaName: string;
     displayName: string;
     entityLogicalName: string;
-    attributeType: "Picklist" | "State" | "Status" | "Boolean" | "MultiSelectPicklist";
+    attributeType: "Picklist" | "State" | "Status" | "MultiSelectPicklist";
     optionSetId?: string;
     optionSetName?: string;
     isGlobal: boolean;
@@ -124,6 +124,10 @@ class MetadataCache {
         });
     }
 
+    delete(key: string): void {
+        this.cache.delete(key);
+    }
+
     clear(): void {
         this.cache.clear();
     }
@@ -178,6 +182,13 @@ export class DataverseMetadataService {
     }
 
     /**
+     * Drop only the global option set list (after an option set is created or deleted)
+     */
+    invalidateGlobalOptionSets(): void {
+        this.cache.delete("global-optionsets:all");
+    }
+
+    /**
      * Get all publishers (excluding Microsoft publishers)
      */
     async getPublishers(): Promise<Publisher[]> {
@@ -197,6 +208,7 @@ export class DataverseMetadataService {
                         <attribute name="uniquename" />
                         <attribute name="friendlyname" />
                         <attribute name="customizationprefix" />
+                        <attribute name="customizationoptionvalueprefix" />
                         <attribute name="isreadonly" />
                         <filter>
                             <condition attribute="isreadonly" operator="eq" value="false" />
@@ -222,19 +234,15 @@ export class DataverseMetadataService {
                     return !isBuiltInPublisher && entity.isreadonly !== "true";
                 })
                 .map((entity: Record<string, unknown>) => {
-                    const rawOptionValuePrefix = entity.optionValueprefix;
-                    const parsedOptionValuePrefix = typeof rawOptionValuePrefix === "number"
-                        ? rawOptionValuePrefix
-                        : Number.parseInt(String(rawOptionValuePrefix ?? "98922"), 10);
+                    // 0 means "unknown": values are then assigned by Dataverse instead of guessed client-side
+                    const parsedOptionValuePrefix = Number(entity.customizationoptionvalueprefix);
 
                     return {
                         publisherId: entity.publisherid as string,
                         uniqueName: entity.uniquename as string,
                         friendlyName: entity.friendlyname as string,
                         customizationPrefix: entity.customizationprefix as string,
-                        optionValuePrefix: Number.isFinite(parsedOptionValuePrefix) && parsedOptionValuePrefix > 0
-                            ? parsedOptionValuePrefix
-                            : 98922,
+                        optionValuePrefix: Number.isInteger(parsedOptionValuePrefix) && parsedOptionValuePrefix > 0 ? parsedOptionValuePrefix : 0,
                         isReadonly: entity.isreadonly === "true",
                     };
                 });
@@ -427,7 +435,7 @@ export class DataverseMetadataService {
         }
 
         return this.deduplicator.deduplicate(cacheKey, async () => {
-            const choiceTypes = new Set(["Picklist", "State", "Status", "Boolean", "MultiSelectPicklist"]);
+            const choiceTypes = new Set(["Picklist", "State", "Status", "MultiSelectPicklist"]);
 
             const result = await this.dataverseAPI.getEntityRelatedMetadata(
                 entityLogicalName,
@@ -535,7 +543,7 @@ export class DataverseMetadataService {
      * Uses type-cast navigation paths to retrieve OptionSetMetadata which includes Options.
      */
     async getLocalChoiceOptions(entityLogicalName: string, attributeLogicalName: string, attributeDisplayName: string): Promise<LocalChoiceDetail> {
-        console.log(`[OptionSetManager] Loading local choice options: ${entityLogicalName}.${attributeLogicalName}`);
+        if (DEBUG) console.log(`[OptionSetManager] Loading local choice options: ${entityLogicalName}.${attributeLogicalName}`);
 
         // Navigate through each concrete attribute type until we find the OptionSet
         const typePaths = [
@@ -546,6 +554,8 @@ export class DataverseMetadataService {
         ];
 
         let rawOptions: Array<Record<string, unknown>> = [];
+        let optionSetIsGlobal: boolean | undefined;
+        let optionSetName: string | undefined;
 
         for (const typePath of typePaths) {
             try {
@@ -554,6 +564,8 @@ export class DataverseMetadataService {
                 const os = optionSet as Record<string, unknown>;
                 rawOptions = (os["Options"] ?? []) as Array<Record<string, unknown>>;
                 if (rawOptions.length > 0 || os["MetadataId"]) {
+                    optionSetIsGlobal = os["IsGlobal"] as boolean | undefined;
+                    optionSetName = os["Name"] as string | undefined;
                     break;
                 }
             } catch {
@@ -566,10 +578,13 @@ export class DataverseMetadataService {
             Value: o["Value"] as number,
             Label: o["Label"] as OptionMetadata["Label"],
             Description: o["Description"] as OptionMetadata["Description"],
+            Color: o["Color"] as string | undefined,
+            IsHidden: o["IsHidden"] as boolean | undefined,
+            ExternalValue: o["ExternalValue"] as string | undefined,
         }));
 
-        console.log(`[OptionSetManager] Loaded ${options.length} options for ${entityLogicalName}.${attributeLogicalName}`);
-        return { entityLogicalName, attributeLogicalName, attributeDisplayName, options };
+        if (DEBUG) console.log(`[OptionSetManager] Loaded ${options.length} options for ${entityLogicalName}.${attributeLogicalName}`);
+        return { entityLogicalName, attributeLogicalName, attributeDisplayName, options, isGlobal: optionSetIsGlobal, optionSetName };
     }
 
     /**

@@ -19,11 +19,14 @@ export function useRowAutoExpand(
     // Ref keeps onUpdateRow current without adding it to the dep array
     const onUpdateRowRef = useRef(onUpdateRow);
     onUpdateRowRef.current = onUpdateRow;
+    // Only the row count triggers the effect (label edits must not re-run it), so read the rows through a ref
+    const rowsRef = useRef(rows);
+    rowsRef.current = rows;
 
     const { autoExpandSubrowsOnAdd, autoAddAllLanguagesOnAdd, autoAddEnglishSubrow, availableLanguageCodes, defaultLanguageCode } = options;
 
     useEffect(() => {
-        const currentIds = rows.map((r) => r.rowId);
+        const currentIds = rowsRef.current.map((r) => r.rowId);
         const prevIds = prevRowIdsRef.current;
         const isAppendOnly = currentIds.length > prevIds.length && prevIds.every((id) => currentIds.includes(id));
         const newIds = isAppendOnly ? currentIds.filter((id) => !prevIds.includes(id)) : [];

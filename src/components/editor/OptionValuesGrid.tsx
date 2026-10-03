@@ -3,14 +3,9 @@ import { ChevronDownRegular, ChevronRightRegular } from "@fluentui/react-icons";
 import { Fragment, useCallback, useMemo, useRef, useState } from "react";
 import type { OptionDraftRow, ValidationIssue } from "../../models/optionSetModels";
 import { LanguagePickerRow, LanguageSubRow, OptionRowMain } from "../editor/grid";
-import { useRowAutoExpand } from "../../hooks/useRowAutoExpand";
-
-const VIRTUAL_THRESHOLD = 50;
-const OVERSCAN = 8;
-const BASE_ROW_H = 37;
-const SUBROW_H = 37;
-const PICKER_ROW_H = 45;
-const ERROR_LINE_H = 20;
+import { useRowDragDrop } from "../../hooks/useRowDragDrop";
+import { useRowExpansion } from "../../hooks/useRowExpansion";
+import { useVirtualScroll } from "../../hooks/useVirtualScroll";
 
 const useStyles = makeStyles({
     panel: {
@@ -272,6 +267,8 @@ interface OptionValuesGridProps {
     autoAddAllLanguages?: boolean;
     autoAddEnglishSubrow?: boolean;
     dirtyRowIds?: ReadonlySet<string>;
+    /** Option values that already exist in Dataverse (their value can't be edited) */
+    lockedValues?: ReadonlySet<number>;
     reorderingAlwaysOn?: boolean;
 }
 
@@ -298,32 +295,32 @@ export function OptionValuesGrid({
     autoAddAllLanguages,
     autoAddEnglishSubrow,
     dirtyRowIds,
+    lockedValues,
     reorderingAlwaysOn,
 }: OptionValuesGridProps): JSX.Element {
     const styles = useStyles();
-    const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-    const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
-    const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+    const { expandedRows, toggleRowExpansion, toggleExpandAll, allExpanded } = useRowExpansion(rows, {
+        autoExpandSubrowsOnAdd,
+        autoAddAllLanguagesOnAdd,
+        autoAddEnglishSubrow,
+        autoAddAllLanguages,
+        availableLanguageCodes,
+        defaultLanguageCode,
+        onUpdateRow,
+    });
+    const { draggingIndex, dragOverIndex, setDraggingIndex, setDragOverIndex } = useRowDragDrop();
     const [applyOrderPending, setApplyOrderPending] = useState(false);
     const [reorderingToggled, setReorderingToggled] = useState(false);
     const isReorderingEnabled = !!reorderingAlwaysOn || reorderingToggled;
     const tableWrapperRef = useRef<HTMLDivElement>(null);
-    const [viewport, setViewport] = useState({ scrollTop: 0, height: 600 });
-    const isVirtualized = rows.length > VIRTUAL_THRESHOLD;
-
-    useRowAutoExpand(rows, setExpandedRows, onUpdateRow, {
-        autoExpandSubrowsOnAdd,
-        autoAddAllLanguagesOnAdd,
-        autoAddEnglishSubrow,
-        availableLanguageCodes,
+    const { isVirtualized, visibleStart, visibleEnd, topSpacerH, bottomSpacerH, handleTableScroll } = useVirtualScroll({
+        rows,
+        expandedRows,
+        validationIssues,
+        hasValidated,
+        singleLanguageMode,
         defaultLanguageCode,
     });
-
-    const allExpanded = rows.length > 0 && rows.every((r) => expandedRows.has(r.rowId));
-
-    const toggleExpandAll = useCallback((): void => {
-        setExpandedRows(allExpanded ? new Set() : new Set(rows.map((r) => r.rowId)));
-    }, [allExpanded, rows]);
 
     // Intersection of user-selected languages and Dataverse-installed languages
     const effectiveVisibleCodes = availableLanguageCodes && availableLanguageCodes.length > 0 ? visibleLanguageCodes.filter((c) => availableLanguageCodes.includes(c)) : visibleLanguageCodes;
@@ -350,35 +347,6 @@ export function OptionValuesGrid({
         }
         return keys;
     }, [hasValidated, validationIssues]);
-
-    const toggleRowExpansion = useCallback(
-        (rowId: string): void => {
-            let willExpand = false;
-            setExpandedRows((prev) => {
-                const next = new Set(prev);
-                if (prev.has(rowId)) {
-                    next.delete(rowId);
-                } else {
-                    next.add(rowId);
-                    willExpand = true;
-                }
-                return next;
-            });
-            if (willExpand && autoAddAllLanguages && availableLanguageCodes && availableLanguageCodes.length > 0) {
-                const envCodes = availableLanguageCodes;
-                onUpdateRow(rowId, (current) => {
-                    const existingCodes = new Set(current.labels.map((l) => l.languageCode));
-                    const toAdd = envCodes.filter((c) => c !== defaultLanguageCode && !existingCodes.has(c));
-                    if (toAdd.length === 0) return current;
-                    return {
-                        ...current,
-                        labels: [...current.labels, ...toAdd.map((c) => ({ languageCode: c, label: "", description: "" }))],
-                    };
-                });
-            }
-        },
-        [onUpdateRow, autoAddAllLanguages, availableLanguageCodes, defaultLanguageCode]
-    );
 
     const handleAddLanguage = useCallback(
         (rowId: string, languageCode: number): void => {
@@ -453,59 +421,6 @@ export function OptionValuesGrid({
         },
         [onUpdateRow]
     );
-
-    // ── Virtual scrolling ─────────────────────────────────────────────────────
-    const rowGroupHeights = useMemo(() => {
-        if (!isVirtualized) return [];
-        return rows.map((row) => {
-            let h = BASE_ROW_H;
-            if (hasValidated) {
-                const errCount = validationIssues.filter((i) => i.rowId === row.rowId).length;
-                if (errCount > 0) h += errCount * ERROR_LINE_H + 8;
-            }
-            if (!singleLanguageMode && expandedRows.has(row.rowId)) {
-                const langCount = row.labels.filter((l) => l.languageCode !== defaultLanguageCode).length;
-                h += langCount * SUBROW_H + PICKER_ROW_H;
-            }
-            return h;
-        });
-    }, [isVirtualized, rows, hasValidated, validationIssues, singleLanguageMode, expandedRows, defaultLanguageCode]);
-
-    const cumulativeOffsets = useMemo(() => {
-        let cum = 0;
-        return rowGroupHeights.map((h) => {
-            const start = cum;
-            cum += h;
-            return start;
-        });
-    }, [rowGroupHeights]);
-
-    const totalRowsHeight = useMemo(() => {
-        if (!isVirtualized || rowGroupHeights.length === 0) return 0;
-        return cumulativeOffsets[cumulativeOffsets.length - 1] + rowGroupHeights[rowGroupHeights.length - 1];
-    }, [isVirtualized, cumulativeOffsets, rowGroupHeights]);
-
-    const { visibleStart, visibleEnd } = useMemo(() => {
-        if (!isVirtualized) return { visibleStart: 0, visibleEnd: rows.length - 1 };
-        const viewStart = Math.max(0, viewport.scrollTop - OVERSCAN * BASE_ROW_H);
-        const viewEnd = viewport.scrollTop + viewport.height + OVERSCAN * BASE_ROW_H;
-        let start = 0;
-        let end = rows.length - 1;
-        for (let i = 0; i < cumulativeOffsets.length; i++) {
-            if (cumulativeOffsets[i] <= viewStart) start = i;
-            if (cumulativeOffsets[i] <= viewEnd) end = i;
-            else break;
-        }
-        return { visibleStart: start, visibleEnd: Math.min(rows.length - 1, end + 1) };
-    }, [isVirtualized, viewport, cumulativeOffsets, rows.length]);
-
-    const topSpacerH = isVirtualized ? (cumulativeOffsets[visibleStart] ?? 0) : 0;
-    const bottomSpacerH = isVirtualized ? Math.max(0, totalRowsHeight - (cumulativeOffsets[visibleEnd] ?? 0) - (rowGroupHeights[visibleEnd] ?? 0)) : 0;
-
-    const handleTableScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-        const { scrollTop, clientHeight } = e.currentTarget;
-        setViewport({ scrollTop, height: clientHeight });
-    }, []);
 
     const colCount = isReorderingEnabled ? 7 : 6;
     const visibleRows = isVirtualized ? rows.slice(visibleStart, visibleEnd + 1) : rows;
@@ -648,6 +563,7 @@ export function OptionValuesGrid({
                                         hideAdvancedProperties={hideRowAdvancedProperties}
                                         isDirty={dirtyRowIds?.has(row.rowId)}
                                         reorderingEnabled={isReorderingEnabled}
+                                        valueLocked={row.optionValue !== undefined && !!lockedValues?.has(row.optionValue)}
                                     />
 
                                     {hasValidated && validationIssues.filter((i) => i.rowId === row.rowId).length > 0 && (

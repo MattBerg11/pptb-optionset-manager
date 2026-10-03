@@ -283,6 +283,25 @@ export function SettingsPanel({ isOpen, onClose, settings, onUpdateSettings, onR
 
                         <Divider />
 
+                        {/* ── Saving ── */}
+                        <div className={styles.group}>
+                            <span className={styles.groupTitle}>Saving</span>
+
+                            <div className={styles.section}>
+                                <Checkbox
+                                    checked={settings.reviewBeforeSave}
+                                    onChange={(_, data) => update({ reviewBeforeSave: !!data.checked })}
+                                    label="Review changes before saving"
+                                    input={{ "aria-describedby": "desc-reviewBeforeSave" }}
+                                />
+                                <p id="desc-reviewBeforeSave" className={styles.checkboxDescription}>
+                                    Shows what will be added, updated and deleted, with a way to revert each change, before anything is sent to Dataverse.
+                                </p>
+                            </div>
+                        </div>
+
+                        <Divider />
+
                         {/* ── Code Generation ── */}
                         <div className={styles.group}>
                             <span className={styles.groupTitle}>Code Generation</span>

@@ -30,6 +30,14 @@ const useStyles = makeStyles({
         color: tokens.colorNeutralForeground1,
         marginTop: tokens.spacingVerticalM,
     },
+    errorMessage: {
+        padding: tokens.spacingVerticalM,
+        backgroundColor: tokens.colorPaletteRedBackground1,
+        border: `${tokens.strokeWidthThin} solid ${tokens.colorPaletteRedBorder2}`,
+        borderRadius: tokens.borderRadiusMedium,
+        color: tokens.colorPaletteRedForeground1,
+        marginTop: tokens.spacingVerticalM,
+    },
     warningTitle: {
         fontWeight: tokens.fontWeightSemibold,
         marginBottom: tokens.spacingVerticalXS,
@@ -44,7 +52,7 @@ const useStyles = makeStyles({
 interface ImportModalProps {
     open: boolean;
     onClose: () => void;
-    onImport: (content: string, extension: string) => void;
+    onImport: (content: string, extension: string) => { ok: boolean; errors: string[] };
     onClearWarnings?: () => void;
     warnings: string[];
 }
@@ -53,15 +61,23 @@ export function ImportModal({ open, onClose, onImport, onClearWarnings, warnings
     const styles = useStyles();
     const [importText, setImportText] = useState("");
     const [extension, setExtension] = useState<"json" | "csv">("json");
+    const [errors, setErrors] = useState<string[]>([]);
 
     const handleImport = (): void => {
-        onImport(importText, extension);
+        const outcome = onImport(importText, extension);
+        if (!outcome.ok) {
+            // Keep the dialog open so the pasted content can be fixed
+            setErrors(outcome.errors);
+            return;
+        }
+        setErrors([]);
         setImportText("");
         onClose();
     };
 
     const handleClose = (): void => {
         setImportText("");
+        setErrors([]);
         onClearWarnings?.();
         onClose();
     };
@@ -88,13 +104,22 @@ export function ImportModal({ open, onClose, onImport, onClearWarnings, warnings
                                 onChange={(_, data) => setImportText(data.value)}
                                 placeholder={
                                     extension === "json"
-                                        ? '[\n  {"value": 1, "label": "Option 1"},\n  {"value": 2, "label": "Option 2"}\n]'
-                                        : "value,label,description\n1,Option 1,First option\n2,Option 2,Second option"
+                                        ? '[\n  {"value": 100000000, "label": "Low", "description": "Low priority"},\n  {"value": 100000001, "label": "High"}\n]\n\n// Multi-language: {"labels": [{"languageCode": 1033, "label": "Low"}, {"languageCode": 1036, "label": "Faible"}]}\n// Omit "value" to let Dataverse assign one.'
+                                        : "value,label,description\n100000000,Low,Low priority\n100000001,High,\n\n// Multi-language columns: label_1033,label_1036,description_1033 …\n// Omit value to let Dataverse assign one."
                                 }
                                 rows={12}
                                 resize="vertical"
                             />
                         </div>
+
+                        {errors.length > 0 && (
+                            <div className={styles.errorMessage} role="alert">
+                                <div className={styles.warningTitle}>Import failed</div>
+                                {errors.map((error, index) => (
+                                    <div key={index}>{error}</div>
+                                ))}
+                            </div>
+                        )}
 
                         {warnings.length > 0 && (
                             <div className={styles.warningMessage}>

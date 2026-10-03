@@ -1,20 +1,25 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getLanguageByCode } from "../components/shared/LanguageConfig";
 import { DEFAULT_LANGUAGE_CODE, EMPTY_DRAFT_TEMPLATE } from "../constants";
 import { EMPTY_METADATA_SELECTION, MetadataSelection } from "../models/metadataModels";
-import type { OptionDraftRow, OptionSetDraft, PreviewSummary, ValidationIssue } from "../models/optionSetModels";
+import type { OperationResultRow, OptionDraftRow, OptionSetDraft, PreviewSummary, ValidationIssue } from "../models/optionSetModels";
 import { parseCodeToDraft, serializeDraftToCode } from "../services/codeGenerationService";
 import { parseImportText } from "../services/importParserService";
+import { type ChangeSet, computeChangeSet } from "../utils/changeSet";
 import { createRowId } from "../utils/createRowId";
-import { validateOptionSetDraft } from "../validation/optionSetValidation";
+import { validateOptionSetDraft } from "../utils/optionSetValidation";
 
-function createDefaultDraft(): OptionSetDraft {
+const languageName = (code: number): string => getLanguageByCode(code)?.name ?? String(code);
+
+function createDefaultDraft(defaultLanguageCode: number = DEFAULT_LANGUAGE_CODE): OptionSetDraft {
     return {
         ...EMPTY_DRAFT_TEMPLATE,
+        defaultLanguageCode,
         rows: EMPTY_DRAFT_TEMPLATE.rows.map((row) => ({
             rowId: createRowId(),
             optionValue: row.optionValue,
             externalKey: row.externalKey,
-            labels: row.labels.map((label) => ({ ...label })),
+            labels: row.labels.map((label) => ({ ...label, languageCode: defaultLanguageCode })),
         })),
     };
 }
@@ -32,6 +37,20 @@ function summarizeIssues(issues: ValidationIssue[], rowCount: number): PreviewSu
     };
 }
 
+// Code edits and imports must never retarget a loaded option set, so identity fields stay as loaded.
+function lockIdentity(current: OptionSetDraft, next: OptionSetDraft): OptionSetDraft {
+    if (current.operation !== "update") return next;
+    return {
+        ...next,
+        operation: "update",
+        scope: current.scope,
+        optionSetSchemaName: current.optionSetSchemaName,
+        entityLogicalName: current.entityLogicalName,
+        attributeLogicalName: current.attributeLogicalName,
+        globalOptionSetName: current.globalOptionSetName,
+    };
+}
+
 export interface BuilderState {
     draft: OptionSetDraft;
     codeText: string;
@@ -40,28 +59,49 @@ export interface BuilderState {
     importWarnings: string[];
     codeError: string | null;
     metadataSelection: MetadataSelection;
+    /** Rows (by id) that are new or differ from Dataverse; only meaningful for a loaded option set */
     dirtyRowIds: ReadonlySet<string>;
     apiErrorRowIds: ReadonlySet<string>;
     apiSuccessRowIds: ReadonlySet<string>;
+    /** Option values that exist in Dataverse, in Dataverse order */
     loadedOptionValues: ReadonlySet<number>;
+    /** Pending changes compared with the loaded option set (everything is "added" for a new one) */
+    changeSet: ChangeSet;
     availableLanguageCodes: number[];
+    hasUnsavedChanges: boolean;
+}
+
+export interface ApplyDraftOptions {
+    /** Keep the loaded snapshot (code edits / imports on a loaded set) instead of re-baselining on the new draft. */
+    preserveLoaded?: boolean;
+}
+
+export interface ImportOutcome {
+    ok: boolean;
+    errors: string[];
 }
 
 export interface BuilderActions {
     setField: <K extends keyof OptionSetDraft>(field: K, value: OptionSetDraft[K]) => void;
-    applyDraft: (nextDraft: OptionSetDraft) => void;
+    applyDraft: (nextDraft: OptionSetDraft, options?: ApplyDraftOptions) => void;
     addRow: () => void;
     removeRow: (rowId: string) => void;
     updateRow: (rowId: string, updater: (row: OptionDraftRow) => OptionDraftRow) => void;
     syncFromCode: () => void;
     setCodeText: (value: string) => void;
     resetDraft: () => void;
-    importFromText: (text: string, extension: string) => void;
+    importFromText: (text: string, extension: string) => ImportOutcome;
     updateMetadataSelection: (partial: Partial<MetadataSelection>) => void;
     resetMetadataSelection: () => void;
     reorderRows: (fromIndex: number, toIndex: number) => void;
     setApiErrorRows: (rowIds: string[]) => void;
     setApiSuccessRows: (rowIds: string[]) => void;
+    applySaveResult: (rows: OperationResultRow[]) => void;
+    /** Undo the pending change on one row: modified → loaded values, added → removed */
+    revertRow: (rowId: string) => void;
+    /** Bring back an option that was removed from the grid */
+    restoreRow: (optionValue: number) => void;
+    revertOrder: () => void;
     clearImportWarnings: () => void;
     setAvailableLanguageCodes: (codes: number[]) => void;
 }
@@ -74,20 +114,46 @@ export function useOptionSetBuilder(
     state: BuilderState;
     actions: BuilderActions;
 } {
-    const [draft, setDraft] = useState<OptionSetDraft>(createDefaultDraft);
+    const [draft, setDraft] = useState<OptionSetDraft>(() => createDefaultDraft());
     const [codeText, setCodeText] = useState<string>(() => serializeDraftToCode(draft));
     const [importWarnings, setImportWarnings] = useState<string[]>([]);
     const [codeError, setCodeError] = useState<string | null>(null);
     const [metadataSelection, setMetadataSelection] = useState<MetadataSelection>(EMPTY_METADATA_SELECTION);
-    const [dirtyRowIds, setDirtyRowIds] = useState<ReadonlySet<string>>(() => new Set<string>());
+    // Rows exactly as they exist in Dataverse. Rows are treated as immutable everywhere, so references can be shared with the grid.
+    const [baselineRows, setBaselineRows] = useState<readonly OptionDraftRow[]>([]);
     const [apiErrorRowIds, setApiErrorRowIdsState] = useState<ReadonlySet<string>>(() => new Set<string>());
     const [apiSuccessRowIds, setApiSuccessRowIdsState] = useState<ReadonlySet<string>>(() => new Set<string>());
-    const [loadedOptionValues, setLoadedOptionValues] = useState<ReadonlySet<number>>(() => new Set<number>());
     const [availableLanguageCodes, setAvailableLanguageCodesState] = useState<number[]>([]);
+
+    // Always-current values for callbacks that must not re-create on every keystroke
+    const draftRef = useRef(draft);
+    draftRef.current = draft;
+    const baselineRef = useRef(baselineRows);
+    baselineRef.current = baselineRows;
 
     // Validate draft and generate issues/preview
     const issues = useMemo(() => validateOptionSetDraft(draft, availableLanguageCodes, { validateBlankTranslationRows }), [draft, availableLanguageCodes, validateBlankTranslationRows]);
     const preview = summarizeIssues(issues, draft.rows.length);
+
+    const isLoadedSet = draft.operation === "update";
+    const changeSet = useMemo(() => computeChangeSet(draft.rows, isLoadedSet ? baselineRows : [], draft.defaultLanguageCode, languageName), [draft.rows, draft.defaultLanguageCode, baselineRows, isLoadedSet]);
+    const loadedOptionValues = useMemo<ReadonlySet<number>>(() => new Set(baselineRows.map((row) => row.optionValue).filter((value): value is number => value !== undefined)), [baselineRows]);
+    const dirtyRowIds = useMemo<ReadonlySet<string>>(
+        () => (isLoadedSet ? new Set(changeSet.changes.filter((change) => change.kind !== "removed").map((change) => change.rowId)) : new Set<string>()),
+        [changeSet, isLoadedSet]
+    );
+
+    // A loaded set is only "unsaved" when something differs from Dataverse; a new set once anything has been entered.
+    const hasUnsavedChanges = useMemo(() => {
+        if (isLoadedSet) return changeSet.changes.length > 0 || changeSet.orderChanged;
+        return (
+            draft.displayName.trim().length > 0 ||
+            draft.optionSetSchemaName.trim().length > 0 ||
+            draft.description.trim().length > 0 ||
+            draft.rows.length > 1 ||
+            draft.rows.some((row) => (row.externalKey?.trim().length ?? 0) > 0 || row.labels.some((label) => label.label.trim().length > 0 || (label.description?.trim().length ?? 0) > 0))
+        );
+    }, [draft, changeSet, isLoadedSet]);
 
     // Debounced code generation from draft changes (skipped when autoGenerateCode is off)
     useEffect(() => {
@@ -98,33 +164,32 @@ export function useOptionSetBuilder(
         return () => clearTimeout(timer);
     }, [draft, autoGenerateCode, autoGenerateDebounceMs]);
 
-    const applyDraft = useCallback((nextDraft: OptionSetDraft) => {
+    const applyDraft = useCallback((nextDraft: OptionSetDraft, options?: ApplyDraftOptions) => {
         setDraft(nextDraft);
         // Always regenerate immediately on load/reset regardless of autoGenerateCode setting
         setCodeText(serializeDraftToCode(nextDraft));
-        setDirtyRowIds(new Set<string>());
         setApiErrorRowIdsState(new Set<string>());
         setApiSuccessRowIdsState(new Set<string>());
-        setLoadedOptionValues(nextDraft.operation === "update" ? new Set(nextDraft.rows.map((r) => r.optionValue).filter((v): v is number => v !== undefined)) : new Set<number>());
+        if (!options?.preserveLoaded) {
+            setBaselineRows(nextDraft.operation === "update" ? nextDraft.rows : []);
+        }
     }, []);
 
     const setField = useCallback(<K extends keyof OptionSetDraft>(field: K, value: OptionSetDraft[K]) => {
         setDraft((prev) => ({ ...prev, [field]: value }));
         if (field === "scope") {
-            setDirtyRowIds(new Set<string>());
             setApiErrorRowIdsState(new Set<string>());
-            setLoadedOptionValues(new Set<number>());
+            setBaselineRows([]);
         }
     }, []);
 
     const addRow = useCallback(() => {
-        const newRowId = createRowId();
         setDraft((prev) => ({
             ...prev,
             rows: [
                 ...prev.rows,
                 {
-                    rowId: newRowId,
+                    rowId: createRowId(),
                     externalKey: "",
                     labels: [
                         {
@@ -136,7 +201,6 @@ export function useOptionSetBuilder(
                 },
             ],
         }));
-        setDirtyRowIds((prev) => new Set([...prev, newRowId]));
     }, []);
 
     const removeRow = useCallback((rowId: string) => {
@@ -151,56 +215,99 @@ export function useOptionSetBuilder(
             ...prev,
             rows: prev.rows.map((row) => (row.rowId === rowId ? updater(row) : row)),
         }));
-        setDirtyRowIds((prev) => new Set([...prev, rowId]));
     }, []);
 
     const syncFromCode = useCallback(() => {
         try {
+            const current = draftRef.current;
             const parsed = parseCodeToDraft(codeText);
             const hydratedRows = parsed.rows.map((row) => ({
                 ...row,
                 rowId: row.rowId || createRowId(),
             }));
-            const nextDraft: OptionSetDraft = {
+            const nextDraft = lockIdentity(current, {
                 ...parsed,
                 publisherPrefix: parsed.publisherPrefix || "",
-                optionValuePrefix: parsed.optionValuePrefix || 98922,
+                optionValuePrefix: parsed.optionValuePrefix || 0,
                 rows: hydratedRows,
-            };
-            applyDraft(nextDraft);
+            });
+            applyDraft(nextDraft, current.operation === "update" ? { preserveLoaded: true } : undefined);
             setCodeError(null);
         } catch (error) {
             setCodeError(error instanceof Error ? error.message : String(error));
         }
     }, [applyDraft, codeText]);
 
+    // Keeps the publisher / solution context (and default language) so several option sets can be created in a row.
     const resetDraft = useCallback(() => {
-        const nextDraft = createDefaultDraft();
-        applyDraft(nextDraft);
+        const current = draftRef.current;
+        applyDraft({
+            ...createDefaultDraft(current.defaultLanguageCode),
+            publisherPrefix: current.publisherPrefix,
+            optionValuePrefix: current.optionValuePrefix,
+            solutionUniqueName: current.solutionUniqueName,
+        });
+        setMetadataSelection((prev) => ({
+            ...prev,
+            entityLogicalName: null,
+            entityDisplayName: null,
+            attributeLogicalName: null,
+            attributeDisplayName: null,
+            attributeSchemaName: null,
+            selectedGlobalOptionSetName: null,
+        }));
         setImportWarnings([]);
         setCodeError(null);
     }, [applyDraft]);
 
     const importFromText = useCallback(
-        (text: string, extension: string) => {
-            const result = parseImportText(text, extension);
+        (text: string, extension: string): ImportOutcome => {
+            const current = draftRef.current;
+            const result = parseImportText(text, extension, current.defaultLanguageCode);
             if (!result.ok || !result.draft) {
-                setCodeError(result.errors.join("\n"));
-                return;
+                return { ok: false, errors: result.errors };
             }
 
-            const nextDraft: OptionSetDraft = {
-                ...draft,
-                ...result.draft,
-                publisherPrefix: result.draft.publisherPrefix || draft.publisherPrefix || "",
-                optionValuePrefix: result.draft.optionValuePrefix || draft.optionValuePrefix || 98922,
-            };
+            const imported = result.draft;
+            const warnings = [...result.warnings];
 
-            applyDraft(nextDraft);
-            setImportWarnings(result.warnings);
+            if (current.operation === "update") {
+                // Importing into a loaded set merges by option value and never removes existing options.
+                const nextRows = [...current.rows];
+                for (const importedRow of imported.rows) {
+                    const existingIndex = importedRow.optionValue !== undefined ? nextRows.findIndex((row) => row.optionValue === importedRow.optionValue) : -1;
+                    if (existingIndex >= 0) {
+                        const existing = nextRows[existingIndex];
+                        const languages = new Set(importedRow.labels.map((label) => label.languageCode));
+                        nextRows[existingIndex] = {
+                            ...existing,
+                            externalKey: importedRow.externalKey || existing.externalKey,
+                            labels: [...existing.labels.filter((label) => !languages.has(label.languageCode)), ...importedRow.labels],
+                        };
+                    } else {
+                        nextRows.push(importedRow);
+                    }
+                }
+                applyDraft({ ...current, rows: nextRows }, { preserveLoaded: true });
+                warnings.push("Imported rows were merged into the loaded option set: rows with a matching value were updated, others were added, nothing was removed.");
+            } else {
+                // New option set: import supplies data only; whatever is already chosen in the sidebar stays.
+                applyDraft({
+                    ...current,
+                    optionSetSchemaName: imported.optionSetSchemaName || current.optionSetSchemaName,
+                    displayName: imported.displayName || current.displayName,
+                    description: imported.description || current.description,
+                    solutionUniqueName: imported.solutionUniqueName || current.solutionUniqueName,
+                    publisherPrefix: imported.publisherPrefix || current.publisherPrefix,
+                    optionValuePrefix: imported.optionValuePrefix || current.optionValuePrefix,
+                    rows: imported.rows,
+                });
+            }
+            setImportWarnings(warnings);
             setCodeError(null);
+            return { ok: true, errors: [] };
         },
-        [applyDraft, draft]
+        [applyDraft]
     );
 
     const updateMetadataSelection = useCallback(
@@ -216,9 +323,9 @@ export function useOptionSetBuilder(
                 updates.publisherPrefix = partial.publisherPrefix || "";
             }
 
-            // Auto-populate option value prefix (number) for option values
+            // Auto-populate option value prefix (number) for option values; 0 = unknown, Dataverse assigns values
             if (partial.optionValuePrefix !== undefined) {
-                updates.optionValuePrefix = partial.optionValuePrefix || 98922;
+                updates.optionValuePrefix = partial.optionValuePrefix || 0;
             }
 
             // Auto-populate solution unique name
@@ -268,6 +375,76 @@ export function useOptionSetBuilder(
         setApiSuccessRowIdsState(new Set(ids));
     }, []);
 
+    // Folds the outcome of a (possibly partial) save back into local state so a retry only sends what is still outstanding.
+    const applySaveResult = useCallback((resultRows: OperationResultRow[]) => {
+        const succeeded = resultRows.filter((r) => r.status === "created" || r.status === "updated");
+        const assignedValues = new Map(succeeded.filter((r) => r.optionValue !== undefined).map((r) => [r.rowId, r.optionValue as number]));
+        const currentRows = draftRef.current.rows;
+
+        setDraft((prev) => ({
+            ...prev,
+            rows: prev.rows.map((row) => (row.optionValue === undefined && assignedValues.has(row.rowId) ? { ...row, optionValue: assignedValues.get(row.rowId) } : row)),
+        }));
+        setBaselineRows((prev) => {
+            const next = [...prev];
+            for (const r of resultRows) {
+                if (r.optionValue === undefined) continue;
+                if (r.status === "deleted") {
+                    const index = next.findIndex((row) => row.optionValue === r.optionValue);
+                    if (index >= 0) next.splice(index, 1);
+                } else if (r.status === "created" || r.status === "updated") {
+                    const current = currentRows.find((row) => row.rowId === r.rowId);
+                    if (!current) continue;
+                    const snapshot = { ...current, optionValue: r.optionValue };
+                    const index = next.findIndex((row) => row.optionValue === r.optionValue);
+                    if (index >= 0) next[index] = snapshot;
+                    else next.push(snapshot);
+                }
+            }
+            return next;
+        });
+    }, []);
+
+    const revertRow = useCallback((rowId: string) => {
+        setDraft((prev) => {
+            const row = prev.rows.find((r) => r.rowId === rowId);
+            if (!row) return prev;
+            const loaded = row.optionValue !== undefined ? baselineRef.current.find((b) => b.optionValue === row.optionValue) : undefined;
+            if (!loaded) return { ...prev, rows: prev.rows.filter((r) => r.rowId !== rowId) };
+            return { ...prev, rows: prev.rows.map((r) => (r.rowId === rowId ? { ...loaded, rowId } : r)) };
+        });
+    }, []);
+
+    const restoreRow = useCallback((optionValue: number) => {
+        setDraft((prev) => {
+            const baseline = baselineRef.current;
+            const baselineIndex = baseline.findIndex((b) => b.optionValue === optionValue);
+            if (baselineIndex < 0 || prev.rows.some((r) => r.optionValue === optionValue)) return prev;
+
+            // Put it back after the closest option that came before it when loaded
+            let insertAt = 0;
+            for (let i = baselineIndex - 1; i >= 0; i -= 1) {
+                const index = prev.rows.findIndex((r) => r.optionValue === baseline[i].optionValue);
+                if (index >= 0) {
+                    insertAt = index + 1;
+                    break;
+                }
+            }
+            const rows = [...prev.rows];
+            rows.splice(insertAt, 0, baseline[baselineIndex]);
+            return { ...prev, rows };
+        });
+    }, []);
+
+    const revertOrder = useCallback(() => {
+        setDraft((prev) => {
+            const position = new Map(baselineRef.current.map((b, index) => [b.optionValue, index]));
+            const isLoaded = (row: OptionDraftRow): boolean => row.optionValue !== undefined && position.has(row.optionValue);
+            const existing = prev.rows.filter(isLoaded).sort((a, b) => (position.get(a.optionValue) as number) - (position.get(b.optionValue) as number));
+            return { ...prev, rows: [...existing, ...prev.rows.filter((row) => !isLoaded(row))] };
+        });
+    }, []);
+
     const clearImportWarnings = useCallback(() => setImportWarnings([]), []);
 
     const setAvailableLanguageCodes = useCallback((codes: number[]) => {
@@ -287,7 +464,9 @@ export function useOptionSetBuilder(
             apiErrorRowIds,
             apiSuccessRowIds,
             loadedOptionValues,
+            changeSet,
             availableLanguageCodes,
+            hasUnsavedChanges,
         },
         actions: {
             setField,
@@ -304,6 +483,10 @@ export function useOptionSetBuilder(
             reorderRows,
             setApiErrorRows,
             setApiSuccessRows,
+            applySaveResult,
+            revertRow,
+            restoreRow,
+            revertOrder,
             clearImportWarnings,
             setAvailableLanguageCodes,
         },

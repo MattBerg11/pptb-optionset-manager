@@ -1,5 +1,7 @@
 import type { OptionDraftRow, OptionSetDraft, ValidationIssue } from "../../models/optionSetModels";
+import type { ChangeSet } from "../../utils/changeSet";
 import { OptionValuesGrid } from "./OptionValuesGrid";
+import { PendingChangesBar } from "./PendingChangesBar";
 
 interface BuilderTabProps {
     draft: OptionSetDraft;
@@ -23,6 +25,9 @@ interface BuilderTabProps {
     autoAddAllLanguages?: boolean;
     autoAddEnglishSubrow?: boolean;
     dirtyRowIds?: ReadonlySet<string>;
+    lockedValues?: ReadonlySet<number>;
+    changeSet: ChangeSet;
+    onRestoreRow: (optionValue: number) => void;
     reorderingAlwaysOn?: boolean;
 }
 
@@ -48,12 +53,17 @@ export function BuilderTab({
     autoAddAllLanguages,
     autoAddEnglishSubrow,
     dirtyRowIds,
+    lockedValues,
+    changeSet,
+    onRestoreRow,
     reorderingAlwaysOn,
 }: BuilderTabProps): JSX.Element {
     const isLoaded = draft.operation === "update";
 
     return (
-        <OptionValuesGrid
+        <>
+            {isLoaded && <PendingChangesBar changeSet={changeSet} onRestoreRow={onRestoreRow} />}
+            <OptionValuesGrid
             rows={draft.rows}
             defaultLanguageCode={draft.defaultLanguageCode}
             onAddRow={onAddRow}
@@ -77,7 +87,9 @@ export function BuilderTab({
             autoAddAllLanguages={autoAddAllLanguages}
             autoAddEnglishSubrow={autoAddEnglishSubrow}
             dirtyRowIds={dirtyRowIds}
+            lockedValues={lockedValues}
             reorderingAlwaysOn={reorderingAlwaysOn}
-        />
+            />
+        </>
     );
 }

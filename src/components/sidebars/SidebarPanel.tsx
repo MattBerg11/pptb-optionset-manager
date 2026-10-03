@@ -1,12 +1,15 @@
-import { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, InfoLabel, Input, Spinner, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { Button, Spinner, Tooltip, makeStyles, tokens } from "@fluentui/react-components";
 import { PlugDisconnectedRegular } from "@fluentui/react-icons";
 import type ToolBoxAPI from "@pptb/types/toolboxAPI";
-import { useMemo, useState } from "react";
-import type { DataverseMetadataService } from "../../api/dataverseMetadata";
+import { useState } from "react";
+import type { DataverseMetadataService } from "../../services/dataverseMetadataService";
 import type { ActivityEntry } from "../../hooks/useActivityLog";
 import type { MetadataSelection } from "../../models/metadataModels";
-import type { OptionSetDraft, GlobalOptionSetDetail, LocalChoiceDetail, ValidationIssue } from "../../models/optionSetModels";
+import type { OptionSetDraft, OptionSetScope, GlobalOptionSetDetail, LocalChoiceDetail, ValidationIssue } from "../../models/optionSetModels";
 import { ActivityLog, ErrorLog, MetadataSelector } from ".";
+import { ConfirmDialog } from "../shared";
+import { OptionSetPropertiesForm } from "./OptionSetPropertiesForm";
+import { ScopeSelector } from "./ScopeSelector";
 
 const useStyles = makeStyles({
     sidebar: {
@@ -49,32 +52,6 @@ const useStyles = makeStyles({
         letterSpacing: "0.05em",
         padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalM}`,
     },
-    scopeToggle: {
-        display: "flex",
-        gap: 0,
-        width: "100%",
-        border: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke1}`,
-        borderRadius: tokens.borderRadiusMedium,
-        backgroundColor: tokens.colorNeutralBackground3,
-        padding: tokens.spacingVerticalXXS,
-        overflow: "hidden",
-    },
-    scopeButton: {
-        flex: 1,
-        minHeight: "32px",
-        borderRadius: tokens.borderRadiusSmall,
-        border: "none",
-        transition: "all 120ms ease-in-out",
-    },
-    scopeButtonActive: {
-        backgroundColor: tokens.colorBrandBackground2,
-        color: tokens.colorNeutralForegroundOnBrand,
-        boxShadow: `inset 0 0 0 1px ${tokens.colorBrandStroke1}`,
-    },
-    scopeButtonInactive: {
-        backgroundColor: "transparent",
-        color: tokens.colorNeutralForeground2,
-    },
     actionRow: {
         display: "flex",
         alignItems: "center",
@@ -110,34 +87,6 @@ const useStyles = makeStyles({
     },
     sidebarMetadata: {
         padding: `0 ${tokens.spacingHorizontalM} ${tokens.spacingVerticalM}`,
-        display: "flex",
-        flexDirection: "column",
-        gap: tokens.spacingVerticalM,
-    },
-    metadataField: {
-        display: "flex",
-        flexDirection: "column",
-        gap: tokens.spacingVerticalXS,
-    },
-    metadataFieldError: {
-        fontSize: tokens.fontSizeBase200,
-        color: tokens.colorPaletteRedForeground2,
-        marginTop: tokens.spacingVerticalXXS,
-    },
-    metadataFieldHint: {
-        fontSize: tokens.fontSizeBase100,
-        color: tokens.colorNeutralForeground3,
-        marginTop: tokens.spacingVerticalXXS,
-    },
-    metadataReadOnlyValue: {
-        fontSize: tokens.fontSizeBase200,
-        color: tokens.colorNeutralForeground3,
-    },
-    schemaPrefixBadge: {
-        color: tokens.colorNeutralForeground3,
-        fontSize: tokens.fontSizeBase200,
-        userSelect: "none",
-        paddingRight: tokens.spacingHorizontalXXS,
     },
 });
 
@@ -145,6 +94,10 @@ export interface SidebarPanelProps {
     // Draft state
     draft: OptionSetDraft;
     metadataSelection: MetadataSelection;
+
+    // Editor mode: is there an option set open in the editor, and does it have changes that would be lost?
+    isGridActive: boolean;
+    hasUnsavedChanges: boolean;
 
     // Connection
     connection: ToolBoxAPI.DataverseConnection | null;
@@ -163,9 +116,6 @@ export interface SidebarPanelProps {
     onToggleShowSystemOptionSets: (value: boolean) => void;
 
     // Validation state
-    hasValidated: boolean;
-    schemaNameManuallyEdited: boolean;
-    displayNameDirty: boolean;
     getFieldError: (fieldPath: string) => string | undefined;
 
     // Actions
@@ -192,16 +142,27 @@ export interface SidebarPanelProps {
 
     // Metadata refresh signal from action bar
     refreshMetadataSignal: number;
+    // Bumped when option sets are created / deleted so the picker reloads
+    globalOptionSetsVersion: number;
 }
+
+type PendingAction = { type: "new" } | { type: "reset" } | { type: "scope"; scope: OptionSetScope };
+
+const CONFIRM_COPY: Record<PendingAction["type"], { title: string; message: string; confirmLabel: string }> = {
+    new: { title: "Start a new option set", message: "Discard the unsaved changes and start a new option set?", confirmLabel: "Discard and start new" },
+    reset: { title: "Reset form", message: "Discard the unsaved changes and close this option set?", confirmLabel: "Discard changes" },
+    scope: { title: "Switch scope", message: "Switching scope closes the current option set. Discard the unsaved changes?", confirmLabel: "Discard and switch" },
+};
 
 export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
     const styles = useStyles();
-    const [showProperties, setShowProperties] = useState(false);
-    const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+    const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
     const {
         draft,
         metadataSelection,
+        isGridActive,
+        hasUnsavedChanges,
         connection,
         isLoading,
         showSystemOptionSets,
@@ -224,60 +185,43 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
         validationIssues,
         onIssueClick,
         refreshMetadataSignal,
+        globalOptionSetsVersion,
     } = props;
 
-    const shouldShowProperties =
-        showProperties ||
-        metadataSelection.selectedGlobalOptionSetName !== null ||
-        draft.displayName.trim().length > 0 ||
-        draft.optionSetSchemaName.trim().length > 0 ||
-        draft.description.trim().length > 0 ||
-        draft.scope === "local" ||
-        draft.operation === "update";
+    // Sidebar modes: idle (nothing open) → pick an existing set or press New; creating (New pressed) → author a new set;
+    // editing (existing set loaded) → properties are shown and the picker stays available to switch sets.
+    const isEditingExisting = draft.operation === "update";
+    const isCreating = isGridActive && !isEditingExisting;
+    const showProperties = isGridActive || isEditingExisting;
+    const isLocalScope = draft.scope === "local";
 
-    const isFormDirty = useMemo(
-        () =>
-            draft.displayName.trim().length > 0 ||
-            draft.optionSetSchemaName.trim().length > 0 ||
-            draft.description.trim().length > 0 ||
-            draft.rows.length > 1 ||
-            draft.rows.some(
-                (row) =>
-                    (row.externalKey?.trim().length ?? 0) > 0 ||
-                    row.labels.some((label) => label.label.trim().length > 0 || (label.description?.trim().length ?? 0) > 0)
-            ),
-        [draft.displayName, draft.optionSetSchemaName, draft.description, draft.rows]
-    );
-
-    const handleNew = (): void => {
-        setShowProperties(true);
-        onSetField("operation", "create");
-        onNew();
+    const runOrConfirm = (action: PendingAction): void => {
+        if (hasUnsavedChanges) {
+            setPendingAction(action);
+            return;
+        }
+        performAction(action);
     };
 
-    const handleResetConfirmed = (): void => {
-        setShowProperties(false);
-        setResetConfirmOpen(false);
-        onSetField("scope", "global");
-        onUpdateMetadataSelection({
-            publisherId: null,
-            publisherName: null,
-            publisherPrefix: null,
-            solutionId: null,
-            solutionName: null,
-            solutionUniqueName: null,
-            entityLogicalName: null,
-            entityDisplayName: null,
-            attributeLogicalName: null,
-            attributeDisplayName: null,
-            attributeSchemaName: null,
-            selectedGlobalOptionSetName: null,
-        });
-        onResetDraft();
+    const performAction = (action: PendingAction): void => {
+        setPendingAction(null);
+        switch (action.type) {
+            case "new":
+                onNew();
+                break;
+            case "reset":
+                onResetDraft();
+                break;
+            case "scope":
+                onResetDraft();
+                onSetField("scope", action.scope);
+                break;
+        }
     };
 
-    const resetProperties = (): void => {
-        setResetConfirmOpen(true);
+    const handleScopeSelect = (scope: OptionSetScope): void => {
+        if (scope === draft.scope) return;
+        runOrConfirm({ type: "scope", scope });
     };
 
     return (
@@ -285,42 +229,18 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
             <div className={styles.sidebarContent}>
                 <div className={styles.sidebarScroll}>
                     <div className={styles.topSection}>
-                        <div className={styles.scopeToggle} role="group" aria-label="Scope">
-                            <Button
-                                appearance="subtle"
-                                onClick={() => {
-                                    onSetField("scope", "global");
-                                    onSetField("entityLogicalName", "");
-                                    onSetField("attributeLogicalName", "");
-                                }}
-                                className={mergeClasses(styles.scopeButton, draft.scope === "global" ? styles.scopeButtonActive : styles.scopeButtonInactive)}
-                                aria-pressed={draft.scope === "global"}
-                            >
-                                Global
-                            </Button>
-                            <Button
-                                appearance="subtle"
-                                onClick={() => {
-                                    onSetField("scope", "local");
-                                    onUpdateMetadataSelection({ selectedGlobalOptionSetName: null });
-                                }}
-                                className={mergeClasses(styles.scopeButton, draft.scope === "local" ? styles.scopeButtonActive : styles.scopeButtonInactive)}
-                                aria-pressed={draft.scope === "local"}
-                            >
-                                Local
-                            </Button>
-                        </div>
+                        <ScopeSelector scope={draft.scope} onGlobalSelect={() => handleScopeSelect("global")} onLocalSelect={() => handleScopeSelect("local")} />
 
                         <div className={styles.actionRow}>
-                            {isFormDirty && (
-                                <Tooltip content="Discard unsaved changes and reset the entire form" relationship="description">
-                                    <Button appearance="secondary" size="small" onClick={resetProperties}>
-                                        Reset
+                            {isGridActive && (
+                                <Tooltip content={hasUnsavedChanges ? "Discard unsaved changes and close this option set" : "Close this option set"} relationship="description">
+                                    <Button appearance="secondary" size="small" onClick={() => runOrConfirm({ type: "reset" })}>
+                                        {hasUnsavedChanges ? "Reset" : "Close"}
                                     </Button>
                                 </Tooltip>
                             )}
-                            <Tooltip content="Start a new blank option set" relationship="description">
-                                <Button appearance="primary" size="small" className={styles.newButton} onClick={handleNew}>
+                            <Tooltip content={isLocalScope ? "New columns can't be created here. Switch to Global to create a new option set." : "Start a new blank option set"} relationship="description">
+                                <Button appearance="primary" size="small" className={styles.newButton} onClick={() => runOrConfirm({ type: "new" })} disabled={isLocalScope}>
                                     New
                                 </Button>
                             </Tooltip>
@@ -341,10 +261,10 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
                                 onGlobalOptionSetLoaded={onGlobalOptionSetLoaded}
                                 onLocalChoiceLoaded={onLocalChoiceLoaded}
                                 onActivityEntry={onActivityEntry}
-                                draftDisplayName={draft.displayName}
-                                draftSchemaName={draft.optionSetSchemaName}
-                                isFormDirty={isFormDirty}
+                                showOptionSetPicker={!isCreating}
+                                isFormDirty={hasUnsavedChanges}
                                 refreshSignal={refreshMetadataSignal}
+                                globalOptionSetsVersion={globalOptionSetsVersion}
                             />
                         </div>
                     )}
@@ -365,99 +285,34 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
                         </div>
                     )}
 
-                    {shouldShowProperties && (
+                    {showProperties && (
                         <>
-                            <div className={styles.sectionLabel}>Option Set Properties</div>
-
+                            <div className={styles.sectionLabel}>{isLocalScope ? "Column" : "Option Set Properties"}</div>
                             <div className={styles.sidebarMetadata}>
-                                <div className={styles.metadataField}>
-                                    <InfoLabel htmlFor="sidebar-displayName" size="medium" info="The user-friendly name shown in Dataverse and Power Apps. Can be changed anytime.">
-                                        Display Name
-                                    </InfoLabel>
-                                    <Input
-                                        id="sidebar-displayName"
-                                        size="small"
-                                        appearance="outline"
-                                        value={draft.displayName}
-                                        onChange={(_, data) => onDisplayNameChange(data.value)}
-                                        placeholder="My Option Set"
-                                        aria-invalid={!!getFieldError("displayName")}
-                                        aria-describedby={getFieldError("displayName") ? "err-displayName" : undefined}
-                                    />
-                                    {getFieldError("displayName") && (
-                                        <span id="err-displayName" className={styles.metadataFieldError} role="alert">
-                                            {getFieldError("displayName")}
-                                        </span>
-                                    )}
-                                </div>
-                                <div className={styles.metadataField}>
-                                    <InfoLabel
-                                        htmlFor="sidebar-schemaName"
-                                        size="medium"
-                                        info="The unique technical name used in code and APIs. Must start with publisher prefix. Cannot be changed after creation."
-                                    >
-                                        Schema Name
-                                    </InfoLabel>
-                                    {(() => {
-                                        const prefix = draft.publisherPrefix && draft.operation !== "update" ? draft.publisherPrefix + "_" : "";
-                                        const suffix = prefix && draft.optionSetSchemaName.startsWith(prefix) ? draft.optionSetSchemaName.slice(prefix.length) : draft.optionSetSchemaName;
-                                        return (
-                                            <Input
-                                                id="sidebar-schemaName"
-                                                size="small"
-                                                appearance={draft.operation === "update" ? "filled-lighter" : "outline"}
-                                                contentBefore={prefix ? <span className={styles.schemaPrefixBadge}>{prefix}</span> : undefined}
-                                                value={suffix}
-                                                onChange={(_, data) => onSchemaNameChange(prefix + data.value)}
-                                                placeholder={prefix ? "MyOptionSet" : "prefix_MyOptionSet"}
-                                                readOnly={draft.operation === "update"}
-                                                disabled={draft.operation === "update"}
-                                                aria-invalid={draft.operation !== "update" && !!getFieldError("optionSetSchemaName")}
-                                                aria-describedby={draft.operation !== "update" && getFieldError("optionSetSchemaName") ? "err-schemaName" : undefined}
-                                            />
-                                        );
-                                    })()}
-                                    {draft.operation === "update" && <span className={styles.metadataFieldHint}>Schema name is read-only after creation</span>}
-                                    {draft.operation !== "update" && getFieldError("optionSetSchemaName") && (
-                                        <span id="err-schemaName" className={styles.metadataFieldError} role="alert">
-                                            {getFieldError("optionSetSchemaName")}
-                                        </span>
-                                    )}
-                                </div>
-                                <div className={styles.metadataField}>
-                                    <InfoLabel htmlFor="sidebar-description" size="medium" info="Optional documentation text describing this option set's purpose.">
-                                        Description
-                                    </InfoLabel>
-                                    <Input
-                                        id="sidebar-description"
-                                        size="small"
-                                        appearance="outline"
-                                        value={draft.description}
-                                        onChange={(_, data) => onSetField("description", data.value)}
-                                        placeholder="Optional description…"
-                                    />
-                                </div>
+                                <OptionSetPropertiesForm
+                                    draft={draft}
+                                    readOnly={isLocalScope}
+                                    getFieldError={getFieldError}
+                                    onDisplayNameChange={onDisplayNameChange}
+                                    onSchemaNameChange={onSchemaNameChange}
+                                    onDescriptionChange={(value) => onSetField("description", value)}
+                                />
                             </div>
                         </>
                     )}
                 </div>
             </div>
-            <Dialog open={resetConfirmOpen} onOpenChange={(_, data) => setResetConfirmOpen(data.open)}>
-                <DialogSurface style={{ width: "min(28rem, calc(100vw - 2rem))" }}>
-                    <DialogBody>
-                        <DialogTitle>Reset form</DialogTitle>
-                        <DialogContent>Reset the current form and return to the global option set selector?</DialogContent>
-                        <DialogActions>
-                            <Button appearance="primary" onClick={handleResetConfirmed}>
-                                Reset
-                            </Button>
-                            <Button appearance="secondary" onClick={() => setResetConfirmOpen(false)}>
-                                Cancel
-                            </Button>
-                        </DialogActions>
-                    </DialogBody>
-                </DialogSurface>
-            </Dialog>
+            <ConfirmDialog
+                open={pendingAction !== null}
+                title={pendingAction ? CONFIRM_COPY[pendingAction.type].title : ""}
+                message={pendingAction ? CONFIRM_COPY[pendingAction.type].message : ""}
+                confirmLabel={pendingAction ? CONFIRM_COPY[pendingAction.type].confirmLabel : "Confirm"}
+                cancelLabel="Cancel"
+                onConfirm={() => {
+                    if (pendingAction) performAction(pendingAction);
+                }}
+                onCancel={() => setPendingAction(null)}
+            />
             <ErrorLog issues={validationIssues} onIssueClick={onIssueClick} />
             <ActivityLog entries={activityEntries} isExpanded={activityLogExpanded} onToggle={onActivityLogToggle} />
         </aside>
