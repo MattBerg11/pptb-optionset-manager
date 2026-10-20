@@ -212,7 +212,6 @@ export class DataverseMetadataService {
                         <attribute name="isreadonly" />
                         <filter>
                             <condition attribute="isreadonly" operator="eq" value="false" />
-                            <condition attribute="uniquename" operator="ne" value="default" />
                         </filter>
                         <order attribute="friendlyname" />
                     </entity>
@@ -225,11 +224,8 @@ export class DataverseMetadataService {
                 .filter((entity: Record<string, unknown>) => {
                     const uniqueName = String(entity.uniquename ?? "").toLowerCase();
                     const friendlyName = String(entity.friendlyname ?? "").toLowerCase();
-                    const isBuiltInPublisher =
-                        uniqueName === "default" ||
-                        uniqueName === "system" ||
-                        friendlyName.includes("default publisher") ||
-                        friendlyName.includes("microsoft");
+                    // The environment's Default Publisher is user-owned and stays selectable
+                    const isBuiltInPublisher = uniqueName === "system" || friendlyName.includes("microsoft");
 
                     return !isBuiltInPublisher && entity.isreadonly !== "true";
                 })

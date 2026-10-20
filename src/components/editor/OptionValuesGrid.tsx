@@ -268,7 +268,8 @@ interface OptionValuesGridProps {
     autoAddEnglishSubrow?: boolean;
     dirtyRowIds?: ReadonlySet<string>;
     /** Option values that already exist in Dataverse (their value can't be edited) */
-    lockedValues?: ReadonlySet<number>;
+    autoValues?: ReadonlyMap<string, number>;
+    lockedRowIds?: ReadonlySet<string>;
     reorderingAlwaysOn?: boolean;
 }
 
@@ -295,7 +296,8 @@ export function OptionValuesGrid({
     autoAddAllLanguages,
     autoAddEnglishSubrow,
     dirtyRowIds,
-    lockedValues,
+    autoValues,
+    lockedRowIds,
     reorderingAlwaysOn,
 }: OptionValuesGridProps): JSX.Element {
     const styles = useStyles();
@@ -563,7 +565,8 @@ export function OptionValuesGrid({
                                         hideAdvancedProperties={hideRowAdvancedProperties}
                                         isDirty={dirtyRowIds?.has(row.rowId)}
                                         reorderingEnabled={isReorderingEnabled}
-                                        valueLocked={row.optionValue !== undefined && !!lockedValues?.has(row.optionValue)}
+                                        autoValue={autoValues?.get(row.rowId)}
+                                        valueLocked={!!lockedRowIds?.has(row.rowId)}
                                     />
 
                                     {hasValidated && validationIssues.filter((i) => i.rowId === row.rowId).length > 0 && (

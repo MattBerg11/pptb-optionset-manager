@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import type { DataverseMetadataService } from "../services/dataverseMetadataService";
-import type { GlobalOptionSetDetail, LocalChoiceDetail, OperationResultRow, OptionSetDraft, SaveLoadState, ValidationIssue } from "../models/optionSetModels";
+import type { GlobalOptionSetDetail, LocalChoiceDetail, OperationResultRow, OptionSetDraft, SaveLoadState, SaveStep, ValidationIssue } from "../models/optionSetModels";
 import { upsertOptionSet } from "../services/dataverseOptionSetService";
 import type { ApplyDraftOptions } from "./useOptionSetBuilder";
 import { extractDescription, optionsToRows } from "../utils/optionRows";
@@ -11,6 +11,7 @@ const NO_CONFLICT = { open: false, addedRemotely: 0, removedRemotely: 0 } as con
 
 interface UseSaveLoadResult {
     state: SaveLoadState;
+    progress: SaveProgress;
     handlers: {
         handleSave: () => Promise<void>;
         handleDeleteOptionSet: () => Promise<void>;
@@ -18,6 +19,7 @@ interface UseSaveLoadResult {
         handleLocalChoiceConfirm: (detail: LocalChoiceDetail) => void;
         dismissSuccess: () => void;
         dismissError: () => void;
+        closeProgress: () => void;
         confirmOverwrite: () => void;
         cancelConflict: () => void;
     };
@@ -27,6 +29,24 @@ interface UseSaveLoadResult {
         saveButtonDisabled: boolean;
         saveTooltip: string;
     };
+}
+
+export interface SaveProgress {
+    open: boolean;
+    /** True once the save has finished (successfully or not) and the dialog can be closed */
+    finished: boolean;
+    steps: SaveStep[];
+}
+
+const NO_PROGRESS: SaveProgress = { open: false, finished: false, steps: [] };
+
+// Adds a step, or replaces the earlier report of the same step
+function applyStep(steps: SaveStep[], step: SaveStep): SaveStep[] {
+    const index = steps.findIndex((existing) => existing.id === step.id);
+    if (index === -1) return [...steps, step];
+    const next = steps.slice();
+    next[index] = step;
+    return next;
 }
 
 interface SaveLoadCallbacks {
@@ -101,6 +121,7 @@ export function useSaveLoad(
         loadedOptionSetName: null,
         conflictDialog: { ...NO_CONFLICT },
     });
+    const [progress, setProgress] = useState<SaveProgress>(NO_PROGRESS);
     // Always-current refs so async handlers don't close over stale objects
     const actionsRef = useRef(actions);
     actionsRef.current = actions;
@@ -118,9 +139,11 @@ export function useSaveLoad(
     const doUpsert = useCallback(async () => {
         if (DEBUG) console.log(`[SaveLoad] Saving option set: ${draft.optionSetSchemaName}`);
         setState((prev) => ({ ...prev, status: "saving", error: null }));
+        setProgress({ open: true, finished: false, steps: [] });
+        const reportStep = (step: SaveStep): void => setProgress((prev) => ({ ...prev, steps: applyStep(prev.steps, step) }));
 
         try {
-            const result = await upsertOptionSet(draft, dirtyRowIds, loadedOptionValues);
+            const result = await upsertOptionSet(draft, dirtyRowIds, loadedOptionValues, reportStep);
             // Record what did get through (created values, deletions) so a retry only sends what is still outstanding
             actionsRef.current.applySaveResult(result.rows);
 
@@ -159,8 +182,11 @@ export function useSaveLoad(
             }
 
             // Back-sync: reload to pick up server-assigned values after create/update
+            const reloadStep: SaveStep = { id: "reload", label: "Reloading option set from Dataverse", status: "running" };
+            reportStep(reloadStep);
             try {
                 const reloadedDraft = await reloadDraft(draft, metadataService);
+                reportStep({ ...reloadStep, status: "done", detail: `${reloadedDraft.rows.length} options` });
                 actionsRef.current.applyDraft(reloadedDraft);
                 actionsRef.current.setApiSuccessRows(reloadedDraft.rows.filter((row) => row.optionValue !== undefined && !loadedOptionValues.has(row.optionValue)).map((row) => row.rowId));
                 const reloadMessage = `Saved and reloaded ${reloadedDraft.rows.length} options`;
@@ -168,6 +194,7 @@ export function useSaveLoad(
                 notify("Reloaded", reloadMessage, "success", 3000);
             } catch (reloadError) {
                 console.warn("[SaveLoad] Post-save reload failed:", reloadError);
+                reportStep({ ...reloadStep, status: "failed", detail: reloadError instanceof Error ? reloadError.message : "Reload failed" });
                 if (draft.operation === "create") {
                     actionsRef.current.setField("operation", "update");
                 }
@@ -177,6 +204,8 @@ export function useSaveLoad(
             console.error("[SaveLoad] Save failed:", error);
             setState((prev) => ({ ...prev, status: "error", error: errorMessage, successMessage: null }));
             notify("Save Error", errorMessage, "error", 5000);
+        } finally {
+            setProgress((prev) => ({ ...prev, finished: true }));
         }
     }, [draft, dirtyRowIds, loadedOptionValues, metadataService, notify]);
 
@@ -249,6 +278,8 @@ export function useSaveLoad(
         },
         [actions, draft, notify]
     );
+
+    const closeProgress = useCallback(() => setProgress(NO_PROGRESS), []);
 
     const dismissSuccess = useCallback(() => {
         setState((prev) => ({ ...prev, successMessage: null, status: "idle" }));
@@ -331,7 +362,8 @@ export function useSaveLoad(
 
     return {
         state,
-        handlers: { handleSave, handleDeleteOptionSet, handleLoadConfirm, handleLocalChoiceConfirm, dismissSuccess, dismissError, confirmOverwrite, cancelConflict },
+        progress,
+        handlers: { handleSave, handleDeleteOptionSet, handleLoadConfirm, handleLocalChoiceConfirm, dismissSuccess, dismissError, closeProgress, confirmOverwrite, cancelConflict },
         computed: { canSave, saveButtonLabel, saveButtonDisabled, saveTooltip },
     };
 }

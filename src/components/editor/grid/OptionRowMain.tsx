@@ -27,6 +27,9 @@ interface OptionRowMainProps {
     isDirty?: boolean;
     reorderingEnabled?: boolean;
     /** Existing Dataverse options can't change value; editing it would delete the original option on save. */
+    /** Value that will be assigned on save when the row has none; shown as the placeholder */
+    autoValue?: number;
+    /** Existing option: Dataverse cannot change the value of an option that already exists */
     valueLocked?: boolean;
 }
 
@@ -51,6 +54,7 @@ export const OptionRowMain = memo(function OptionRowMain({
     hideAdvancedProperties,
     isDirty,
     reorderingEnabled,
+    autoValue,
     valueLocked,
 }: OptionRowMainProps): JSX.Element {
     const defaultLabel = row.labels.find((entry) => entry.languageCode === defaultLanguageCode) ?? row.labels[0];
@@ -187,9 +191,9 @@ export const OptionRowMain = memo(function OptionRowMain({
                     max={MAX_OPTION_VALUE}
                     step={0}
                     value={row.optionValue?.toString() ?? ""}
-                    placeholder="Auto"
+                    placeholder={autoValue !== undefined ? String(autoValue) : "Auto"}
                     readOnly={valueLocked}
-                    title={valueLocked ? "Existing option values can't be changed. Delete the option and add a new one instead." : undefined}
+                    title={valueLocked ? "The value of an existing option can't be changed. Delete the option and add a new one instead." : undefined}
                     className={mergeClasses(styles.inputFlex, styles.numberInput)}
                     style={{ width: "100%" }}
                     aria-label={valueLocked ? "Numeric value (read-only, option already exists)" : "Numeric value"}
