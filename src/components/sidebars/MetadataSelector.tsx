@@ -110,7 +110,6 @@ interface MetadataSelectorProps {
     onSelectionChange: (partial: Partial<MetadataSelection>) => void;
     onGlobalOptionSetLoaded?: (detail: GlobalOptionSetDetail) => void;
     onLocalChoiceLoaded?: (detail: LocalChoiceDetail) => void;
-    onActivityEntry?: (message: string, type: "added" | "removed" | "changed" | "loaded" | "reset") => void;
     /** Hide the "pick an existing option set" control while a brand-new option set is being authored */
     showOptionSetPicker?: boolean;
     isFormDirty?: boolean;
@@ -128,7 +127,6 @@ export function MetadataSelector({
     onSelectionChange,
     onGlobalOptionSetLoaded,
     onLocalChoiceLoaded,
-    onActivityEntry,
     showOptionSetPicker = true,
     isFormDirty = false,
     refreshSignal,
@@ -142,9 +140,6 @@ export function MetadataSelector({
     const localChoiceGuardRef = useRef<{ cancelled: boolean } | null>(null);
     const optionSetDetailGuardRef = useRef<{ cancelled: boolean } | null>(null);
 
-    // Stable ref so load callbacks don't need onActivityEntry in their deps
-    const activityRef = useRef(onActivityEntry);
-    activityRef.current = onActivityEntry;
 
     const { publishers, solutions, entities, attributes, globalOptionSets, isLoading, setLoading, fieldErrors, setFieldError, loadAllEntitiesClicked, loadAllEntities } = useMetadataData({
         metadataService,
