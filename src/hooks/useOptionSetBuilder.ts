@@ -65,6 +65,8 @@ export interface BuilderState {
     apiSuccessRowIds: ReadonlySet<string>;
     /** Option values that exist in Dataverse, in Dataverse order */
     loadedOptionValues: ReadonlySet<number>;
+    /** Rows as last loaded from Dataverse; used on save to detect cleared fields */
+    baselineRows: readonly OptionDraftRow[];
     /** Pending changes compared with the loaded option set (everything is "added" for a new one) */
     changeSet: ChangeSet;
     availableLanguageCodes: number[];
@@ -464,6 +466,7 @@ export function useOptionSetBuilder(
             apiErrorRowIds,
             apiSuccessRowIds,
             loadedOptionValues,
+            baselineRows,
             changeSet,
             availableLanguageCodes,
             hasUnsavedChanges,

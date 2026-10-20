@@ -43,8 +43,9 @@ function buildLabel(row: OptionDraftRow, defaultLanguageCode: number): Dataverse
     };
 }
 
-function buildDescription(row: OptionDraftRow, defaultLanguageCode: number): DataverseAPI.Label | undefined {
-    const withDesc = row.labels.filter((l) => l.description);
+// clearedLanguageCodes get an explicit empty entry so a description removed in the grid is also removed in Dataverse.
+function buildDescription(row: OptionDraftRow, defaultLanguageCode: number, clearedLanguageCodes: readonly number[] = []): DataverseAPI.Label | undefined {
+    const withDesc = [...row.labels.filter((l) => l.description), ...clearedLanguageCodes.map((languageCode) => ({ languageCode, label: "", description: "" }))];
     if (withDesc.length === 0) return undefined;
 
     const defaultEntry = withDesc.find((l) => l.languageCode === defaultLanguageCode) ?? withDesc[0];
@@ -63,6 +64,26 @@ function buildDescription(row: OptionDraftRow, defaultLanguageCode: number): Dat
                   LanguageCode: defaultEntry.languageCode,
               }
             : undefined,
+    };
+}
+
+// What the user emptied on a loaded row. Omitted fields are left untouched by Dataverse, so clears must be sent explicitly.
+interface ClearedFields {
+    labelLanguages: number[];
+    descriptionLanguages: number[];
+    externalValue: boolean;
+    color: boolean;
+}
+
+function findClearedFields(row: OptionDraftRow, baseline: OptionDraftRow | undefined): ClearedFields {
+    const none: ClearedFields = { labelLanguages: [], descriptionLanguages: [], externalValue: false, color: false };
+    if (!baseline) return none;
+    const current = new Map(row.labels.map((l) => [l.languageCode, l]));
+    return {
+        labelLanguages: baseline.labels.filter((b) => b.label.trim() && !current.get(b.languageCode)?.label.trim()).map((b) => b.languageCode),
+        descriptionLanguages: baseline.labels.filter((b) => b.description?.trim() && !current.get(b.languageCode)?.description?.trim()).map((b) => b.languageCode),
+        externalValue: !!baseline.externalKey && !row.externalKey,
+        color: !!baseline.color && !row.color,
     };
 }
 
@@ -97,7 +118,12 @@ function sameSequence(a: readonly number[], b: readonly number[]): boolean {
     return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
-export async function upsertOptionSet(draft: OptionSetDraft, dirtyRowIds?: ReadonlySet<string>, loadedOptionValues?: ReadonlySet<number>): Promise<OptionSetOperationResult> {
+export async function upsertOptionSet(
+    draft: OptionSetDraft,
+    dirtyRowIds?: ReadonlySet<string>,
+    loadedOptionValues?: ReadonlySet<number>,
+    baselineRows: readonly OptionDraftRow[] = []
+): Promise<OptionSetOperationResult> {
     const solutionOptions = draft.solutionUniqueName ? { solutionUniqueName: draft.solutionUniqueName } : undefined;
     const persisted = loadedOptionValues ?? new Set<number>();
     const warnings: string[] = [];
@@ -149,6 +175,7 @@ export async function upsertOptionSet(draft: OptionSetDraft, dirtyRowIds?: Reado
         const requestedValue = row.optionValue ?? assignedValues.get(row.rowId);
         const isPersistedRow = row.optionValue !== undefined && persisted.has(row.optionValue);
         let finalValue = requestedValue;
+        const cleared = findClearedFields(row, isPersistedRow ? baselineRows.find((b) => b.optionValue === row.optionValue) : undefined);
 
         try {
             if (draft.operation === "update" && isPersistedRow && dirtyRowIds && !dirtyRowIds.has(row.rowId)) {
@@ -163,11 +190,13 @@ export async function upsertOptionSet(draft: OptionSetDraft, dirtyRowIds?: Reado
                 Label: buildLabel(row, draft.defaultLanguageCode),
             };
             if (requestedValue !== undefined) params.Value = requestedValue;
-            const description = buildDescription(row, draft.defaultLanguageCode);
+            const description = buildDescription(row, draft.defaultLanguageCode, cleared.descriptionLanguages);
             if (description) params.Description = description;
             if (row.externalKey) params.ExternalValue = row.externalKey;
+            else if (cleared.externalValue) params.ExternalValue = "";
             if (row.hidden !== undefined) params.IsHidden = row.hidden;
             if (row.color) params.Color = row.color;
+            else if (cleared.color) params.Color = "";
             if (draft.solutionUniqueName) params.SolutionUniqueName = draft.solutionUniqueName;
 
             const insert = async (): Promise<void> => {
@@ -179,7 +208,9 @@ export async function upsertOptionSet(draft: OptionSetDraft, dirtyRowIds?: Reado
                 operationRows.push({ rowId: row.rowId, optionValue: finalValue, status: "created", message: "Option created." });
             };
             const update = async (message: string): Promise<void> => {
-                await window.dataverseAPI.updateOptionValue({ ...params, MergeLabels: true });
+                // MergeLabels keeps languages missing from Label/Description, so a removed translation needs a full replace.
+                // Label and Description are both sent in full, so replacing drops only what was cleared.
+                await window.dataverseAPI.updateOptionValue({ ...params, MergeLabels: cleared.labelLanguages.length === 0 });
                 updated += 1;
                 operationRows.push({ rowId: row.rowId, optionValue: finalValue, status: "updated", message });
             };
@@ -238,8 +269,13 @@ export async function upsertOptionSet(draft: OptionSetDraft, dirtyRowIds?: Reado
         }
     }
 
-    // Publish so all changes become active in Dataverse
-    await window.dataverseAPI.publishCustomizations(publishScope(draft));
+    // Publish so all changes become active in Dataverse. The writes above already went through, so a publish
+    // failure is a warning: throwing would hide the created rows and make a retry insert them a second time.
+    try {
+        await window.dataverseAPI.publishCustomizations(publishScope(draft));
+    } catch (publishError) {
+        warnings.push(`Changes were saved but not published: ${normalizeError(publishError)}. Publish customizations in Dataverse to make them active.`);
+    }
 
     return { summary: { created, updated, skipped, deleted, failed }, rows: operationRows, warnings };
 }
