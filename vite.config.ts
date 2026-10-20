@@ -1,6 +1,6 @@
 import react from "@vitejs/plugin-react";
 import type { Plugin, PluginOption } from "vite";
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 
 /**
  * Plugin to fix HTML for PPTB compatibility
@@ -62,6 +62,9 @@ export default defineConfig((configEnv) => {
           format: "es",
         },
       },
+    },
+    test: {
+      environment: "node",
     },
   };
 });
