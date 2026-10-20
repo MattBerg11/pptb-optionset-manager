@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import type { DataverseMetadataService } from "../services/dataverseMetadataService";
-import type { GlobalOptionSetDetail, LocalChoiceDetail, OperationResultRow, OptionSetDraft, SaveLoadState, SaveStep, ValidationIssue } from "../models/optionSetModels";
+import type { GlobalOptionSetDetail, LocalChoiceDetail, OperationResultRow, OptionDraftRow, OptionSetDraft, SaveLoadState, SaveStep, ValidationIssue } from "../models/optionSetModels";
 import { upsertOptionSet } from "../services/dataverseOptionSetService";
 import type { ApplyDraftOptions } from "./useOptionSetBuilder";
 import { extractDescription, optionsToRows } from "../utils/optionRows";
@@ -103,6 +103,7 @@ export function useSaveLoad(
     connection: ToolBoxAPI.DataverseConnection | null,
     dirtyRowIds: ReadonlySet<string>,
     loadedOptionValues: ReadonlySet<number>,
+    baselineRows: readonly OptionDraftRow[],
     actions: {
         setField: <K extends keyof OptionSetDraft>(field: K, value: OptionSetDraft[K]) => void;
         applyDraft: (nextDraft: OptionSetDraft, options?: ApplyDraftOptions) => void;
@@ -143,7 +144,7 @@ export function useSaveLoad(
         const reportStep = (step: SaveStep): void => setProgress((prev) => ({ ...prev, steps: applyStep(prev.steps, step) }));
 
         try {
-            const result = await upsertOptionSet(draft, dirtyRowIds, loadedOptionValues, reportStep);
+            const result = await upsertOptionSet(draft, dirtyRowIds, loadedOptionValues, baselineRows, reportStep);
             // Record what did get through (created values, deletions) so a retry only sends what is still outstanding
             actionsRef.current.applySaveResult(result.rows);
 
@@ -189,7 +190,7 @@ export function useSaveLoad(
                 reportStep({ ...reloadStep, status: "done", detail: `${reloadedDraft.rows.length} options` });
                 actionsRef.current.applyDraft(reloadedDraft);
                 actionsRef.current.setApiSuccessRows(reloadedDraft.rows.filter((row) => row.optionValue !== undefined && !loadedOptionValues.has(row.optionValue)).map((row) => row.rowId));
-                const reloadMessage = `Saved and reloaded ${reloadedDraft.rows.length} options`;
+                const reloadMessage = `Saved and reloaded ${reloadedDraft.rows.length} options.${warningDetail}`;
                 setState((prev) => ({ ...prev, successMessage: reloadMessage, loadedAt: new Date() }));
                 notify("Reloaded", reloadMessage, "success", 3000);
             } catch (reloadError) {
@@ -207,7 +208,7 @@ export function useSaveLoad(
         } finally {
             setProgress((prev) => ({ ...prev, finished: true }));
         }
-    }, [draft, dirtyRowIds, loadedOptionValues, metadataService, notify]);
+    }, [draft, dirtyRowIds, loadedOptionValues, baselineRows, metadataService, notify]);
 
     const handleSave = useCallback(async () => {
         if (!canSave) {
