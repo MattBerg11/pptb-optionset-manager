@@ -101,8 +101,24 @@ function targetParams(draft: TargetDraft): Record<string, unknown> {
     return { EntityLogicalName: draft.entityLogicalName, AttributeLogicalName: draft.attributeLogicalName };
 }
 
-function publishScope(draft: TargetDraft): string | undefined {
-    return draft.scope === "local" && !draft.globalOptionSetName ? draft.entityLogicalName : undefined;
+function xmlEscape(value: string): string {
+    return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+
+// Publishes only what this draft touched. publishCustomizations() without a table runs PublishAllXml, which would
+// also publish everyone else's pending changes, so a global option set is published by name through PublishXml.
+export async function publishDraftTarget(draft: TargetDraft): Promise<void> {
+    const optionSetName = draft.scope === "global" ? draft.optionSetSchemaName : draft.globalOptionSetName;
+    if (!optionSetName) {
+        await window.dataverseAPI.publishCustomizations(draft.entityLogicalName);
+        return;
+    }
+    const entities = draft.scope === "local" && draft.entityLogicalName ? `<entities><entity>${xmlEscape(draft.entityLogicalName)}</entity></entities>` : "";
+    await window.dataverseAPI.execute({
+        operationName: "PublishXml",
+        operationType: "action",
+        parameters: { ParameterXml: `<importexportxml>${entities}<optionsets><optionset>${xmlEscape(optionSetName)}</optionset></optionsets></importexportxml>` },
+    });
 }
 
 async function globalOptionSetExists(name: string): Promise<boolean> {
@@ -305,7 +321,7 @@ export async function upsertOptionSet(
     // Publish so all changes become active in Dataverse. The writes above already went through, so a publish
     // failure is a warning: throwing would hide the created rows and make a retry insert them a second time.
     try {
-        await runStep("Publishing customizations", () => window.dataverseAPI.publishCustomizations(publishScope(draft)));
+        await runStep("Publishing changes", () => publishDraftTarget(draft));
     } catch (publishError) {
         warnings.push(`Changes were saved but not published: ${normalizeError(publishError)}. Publish customizations in Dataverse to make them active.`);
     }
@@ -326,8 +342,8 @@ export async function orderOptionSet(draft: TargetDraft & Pick<OptionSetDraft, "
     await window.dataverseAPI.orderOption(params);
 
     try {
-        await window.dataverseAPI.publishCustomizations(publishScope(draft));
+        await publishDraftTarget(draft);
     } catch (publishError) {
-        console.error("[OptionSetService] publishCustomizations failed after orderOption:", publishError);
+        console.error("[OptionSetService] Publish failed after orderOption:", publishError);
     }
 }
