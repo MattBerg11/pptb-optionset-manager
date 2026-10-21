@@ -266,8 +266,11 @@ export async function upsertOptionSet(
     // Delete option values that were removed from the draft
     if (persisted.size > 0) {
         const currentValues = new Set(draft.rows.map((r) => r.optionValue).filter((v): v is number => v !== undefined));
+        // A changed value is saved as insert + delete; keep the old option if the new one could not be created
+        const failedRowIds = new Set(operationRows.filter((r) => r.status === "failed").map((r) => r.rowId));
+        const keptValues = new Set(baselineRows.filter((b) => b.optionValue !== undefined && failedRowIds.has(b.rowId)).map((b) => b.optionValue as number));
         for (const deletedValue of persisted) {
-            if (currentValues.has(deletedValue)) continue;
+            if (currentValues.has(deletedValue) || keptValues.has(deletedValue)) continue;
 
             const deleteParams: Record<string, unknown> = { ...target, Value: deletedValue };
             if (draft.solutionUniqueName) deleteParams.SolutionUniqueName = draft.solutionUniqueName;

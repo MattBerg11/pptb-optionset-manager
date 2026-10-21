@@ -65,8 +65,6 @@ export interface BuilderState {
     apiSuccessRowIds: ReadonlySet<string>;
     /** Option values that exist in Dataverse, in Dataverse order */
     loadedOptionValues: ReadonlySet<number>;
-    /** Row ids of options that exist in Dataverse (their numeric value cannot be changed) */
-    loadedRowIds: ReadonlySet<string>;
     /** Rows as last loaded from Dataverse; used on save to detect cleared fields */
     baselineRows: readonly OptionDraftRow[];
     /** Pending changes compared with the loaded option set (everything is "added" for a new one) */
@@ -142,7 +140,6 @@ export function useOptionSetBuilder(
     const isLoadedSet = draft.operation === "update";
     const changeSet = useMemo(() => computeChangeSet(draft.rows, isLoadedSet ? baselineRows : [], draft.defaultLanguageCode, languageName), [draft.rows, draft.defaultLanguageCode, baselineRows, isLoadedSet]);
     const loadedOptionValues = useMemo<ReadonlySet<number>>(() => new Set(baselineRows.map((row) => row.optionValue).filter((value): value is number => value !== undefined)), [baselineRows]);
-    const loadedRowIds = useMemo<ReadonlySet<string>>(() => new Set(baselineRows.filter((row) => row.optionValue !== undefined).map((row) => row.rowId)), [baselineRows]);
     const dirtyRowIds = useMemo<ReadonlySet<string>>(
         () => (isLoadedSet ? new Set(changeSet.changes.filter((change) => change.kind !== "removed").map((change) => change.rowId)) : new Set<string>()),
         [changeSet, isLoadedSet]
@@ -469,7 +466,6 @@ export function useOptionSetBuilder(
             apiErrorRowIds,
             apiSuccessRowIds,
             loadedOptionValues,
-            loadedRowIds,
             baselineRows,
             changeSet,
             availableLanguageCodes,

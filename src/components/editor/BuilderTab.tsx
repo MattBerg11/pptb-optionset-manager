@@ -26,7 +26,6 @@ interface BuilderTabProps {
     autoAddEnglishSubrow?: boolean;
     dirtyRowIds?: ReadonlySet<string>;
     autoValues?: ReadonlyMap<string, number>;
-    lockedRowIds?: ReadonlySet<string>;
     changeSet: ChangeSet;
     onRestoreRow: (optionValue: number) => void;
     reorderingAlwaysOn?: boolean;
@@ -55,7 +54,6 @@ export function BuilderTab({
     autoAddEnglishSubrow,
     dirtyRowIds,
     autoValues,
-    lockedRowIds,
     changeSet,
     onRestoreRow,
     reorderingAlwaysOn,
@@ -90,7 +88,6 @@ export function BuilderTab({
             autoAddEnglishSubrow={autoAddEnglishSubrow}
             dirtyRowIds={dirtyRowIds}
             autoValues={autoValues}
-            lockedRowIds={lockedRowIds}
             reorderingAlwaysOn={reorderingAlwaysOn}
             />
         </>

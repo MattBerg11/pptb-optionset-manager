@@ -546,7 +546,6 @@ export function App(): JSX.Element {
                                         autoAddEnglishSubrow={settings.primaryLanguageMode === "environmentDefault" && settings.autoAddEnglishSubrow}
                                         dirtyRowIds={state.dirtyRowIds}
                                         autoValues={autoValues}
-                                        lockedRowIds={state.loadedRowIds}
                                         changeSet={state.changeSet}
                                         onRestoreRow={actions.restoreRow}
                                         reorderingAlwaysOn={settings.reorderingAlwaysOn}

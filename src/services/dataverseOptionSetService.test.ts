@@ -122,3 +122,23 @@ describe("upsertOptionSet: publish failure", () => {
         expect(result.warnings?.[0]).toContain("Publish timed out");
     });
 });
+
+describe("upsertOptionSet: changed option value", () => {
+    const changed: OptionDraftRow = { ...loaded, optionValue: 100000005 };
+
+    it("creates the option with the new value and deletes the old one", async () => {
+        const result = await save(changed);
+
+        expect(api.insertOptionValue).toHaveBeenCalledWith(expect.objectContaining({ Value: 100000005 }));
+        expect(api.deleteOptionValue).toHaveBeenCalledWith(expect.objectContaining({ Value: 100000000 }));
+        expect(result.summary).toMatchObject({ created: 1, deleted: 1, failed: 0 });
+    });
+
+    it("keeps the old option when the new value could not be created", async () => {
+        api.insertOptionValue.mockRejectedValueOnce(new Error("Value already in use"));
+        const result = await save(changed);
+
+        expect(api.deleteOptionValue).not.toHaveBeenCalled();
+        expect(result.summary).toMatchObject({ created: 0, deleted: 0, failed: 1 });
+    });
+});
