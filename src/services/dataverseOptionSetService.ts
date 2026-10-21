@@ -1,5 +1,6 @@
 import { DEFAULT_LANGUAGE_CODE } from "../constants.ts";
 import { OptionSetOperationError } from "../models/optionSetErrors";
+import { isReadOnlyAttributeType } from "../models/optionSetModels";
 import type { OptionDraftRow, OptionSetDraft, OptionSetOperationResult, SaveStepReporter } from "../models/optionSetModels";
 import { assignOptionValues } from "../utils/optionValues";
 
@@ -92,7 +93,7 @@ function normalizeError(error: unknown): string {
     return "Unknown Dataverse error.";
 }
 
-type TargetDraft = Pick<OptionSetDraft, "scope" | "optionSetSchemaName" | "entityLogicalName" | "attributeLogicalName" | "globalOptionSetName" | "solutionUniqueName">;
+type TargetDraft = Pick<OptionSetDraft, "scope" | "optionSetSchemaName" | "entityLogicalName" | "attributeLogicalName" | "globalOptionSetName" | "solutionUniqueName" | "attributeType">;
 
 // Global sets are addressed by name. A local column backed by a global choice must be edited through that global set.
 function targetParams(draft: TargetDraft): Record<string, unknown> {
@@ -330,6 +331,9 @@ export async function upsertOptionSet(
 }
 
 export async function orderOptionSet(draft: TargetDraft & Pick<OptionSetDraft, "rows">): Promise<void> {
+    if (draft.scope === "local" && isReadOnlyAttributeType(draft.attributeType)) {
+        throw new OptionSetOperationError(`${draft.attributeType} columns are read-only in this tool for now.`, "OrderOptionSet");
+    }
     if (draft.rows.some((r) => r.optionValue === undefined || r.optionValue === null)) {
         throw new OptionSetOperationError("Cannot reorder: some options have no assigned value. Save the option set first to assign values.", "OrderOptionSet");
     }

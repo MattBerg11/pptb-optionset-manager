@@ -48,6 +48,7 @@ function lockIdentity(current: OptionSetDraft, next: OptionSetDraft): OptionSetD
         entityLogicalName: current.entityLogicalName,
         attributeLogicalName: current.attributeLogicalName,
         globalOptionSetName: current.globalOptionSetName,
+        attributeType: current.attributeType,
     };
 }
 

@@ -6,7 +6,7 @@
  */
 
 import type DataverseAPI from "@pptb/types/dataverseAPI";
-import type { GlobalOptionSetDetail, GlobalOptionSetSummary, LocalChoiceDetail, OptionMetadata } from "../models/optionSetModels";
+import type { ChoiceAttributeType, GlobalOptionSetDetail, GlobalOptionSetSummary, LocalChoiceDetail, OptionMetadata } from "../models/optionSetModels";
 
 const DEBUG = typeof window !== "undefined" && (window as unknown as Record<string, unknown>)["__PPTB_DEBUG__"] === true;
 
@@ -55,7 +55,7 @@ export interface ChoiceAttribute {
     schemaName: string;
     displayName: string;
     entityLogicalName: string;
-    attributeType: "Picklist" | "State" | "Status" | "MultiSelectPicklist";
+    attributeType: ChoiceAttributeType;
     optionSetId?: string;
     optionSetName?: string;
     isGlobal: boolean;
@@ -552,6 +552,7 @@ export class DataverseMetadataService {
         let rawOptions: Array<Record<string, unknown>> = [];
         let optionSetIsGlobal: boolean | undefined;
         let optionSetName: string | undefined;
+        let attributeType: ChoiceAttributeType | undefined;
 
         for (const typePath of typePaths) {
             try {
@@ -562,6 +563,7 @@ export class DataverseMetadataService {
                 if (rawOptions.length > 0 || os["MetadataId"]) {
                     optionSetIsGlobal = os["IsGlobal"] as boolean | undefined;
                     optionSetName = os["Name"] as string | undefined;
+                    attributeType = typePath.replace("Microsoft.Dynamics.CRM.", "").replace("AttributeMetadata", "") as ChoiceAttributeType;
                     break;
                 }
             } catch {
@@ -580,7 +582,7 @@ export class DataverseMetadataService {
         }));
 
         if (DEBUG) console.log(`[OptionSetManager] Loaded ${options.length} options for ${entityLogicalName}.${attributeLogicalName}`);
-        return { entityLogicalName, attributeLogicalName, attributeDisplayName, options, isGlobal: optionSetIsGlobal, optionSetName };
+        return { entityLogicalName, attributeLogicalName, attributeDisplayName, options, isGlobal: optionSetIsGlobal, optionSetName, attributeType };
     }
 
     /**
