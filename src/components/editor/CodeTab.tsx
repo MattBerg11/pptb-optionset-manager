@@ -134,12 +134,16 @@ function CodeMirrorEditor({ code, onChange, readOnly, language, lineNumbers: sho
     return <div ref={containerRef} className={className} aria-label={ariaLabel} aria-describedby={ariaDescribedBy} />;
 }
 
-type OutputFormat = "json" | "csv";
+export type CodeFormat = "json" | "csv";
 
-const FORMATS: Record<OutputFormat, { label: string; hint: string }> = {
+const FORMATS: Record<CodeFormat, { label: string; hint: string }> = {
     json: { label: "JSON", hint: "Editable. Apply to send your edits back to the Builder." },
     csv: { label: "CSV", hint: "Read-only. Edit options in the Builder tab." },
 };
+
+function getDisplayedCode(format: CodeFormat, draft: OptionSetDraft, codeText: string): string {
+    return format === "csv" ? serializeDraftToCsv(draft) : codeText;
+}
 
 const useStyles = makeStyles({
     root: {
@@ -154,9 +158,6 @@ const useStyles = makeStyles({
     header: {
         display: "flex",
         alignItems: "center",
-        justifyContent: "space-between",
-        gap: tokens.spacingHorizontalM,
-        flexWrap: "wrap",
         padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalS}`,
         backgroundColor: tokens.colorNeutralBackground2,
         borderBottom: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
@@ -204,34 +205,20 @@ const useStyles = makeStyles({
     },
 });
 
-interface CodeTabProps {
+interface CodeTabActionsProps {
     codeText: string;
-    codeError: string | null;
-    onCodeChange: (code: string) => void;
-    onApplyCode: () => void;
     draft: OptionSetDraft;
+    outputFormat: CodeFormat;
     schemaName?: string;
+    onApplyCode: () => void;
 }
 
-export function CodeTab({ codeText, codeError, onCodeChange, onApplyCode, draft, schemaName }: CodeTabProps): JSX.Element {
+/** Apply / Copy / Export for the Code tab; rendered in the action bar */
+export function CodeTabActions({ codeText, draft, outputFormat, schemaName, onApplyCode }: CodeTabActionsProps): JSX.Element {
     const styles = useStyles();
-    const [outputFormat, setOutputFormat] = useState<OutputFormat>("json");
-    const [isDarkTheme, setIsDarkTheme] = useState(true);
     const [isCopied, setIsCopied] = useState(false);
     const copyTimeoutRef = useRef<number | undefined>(undefined);
-
-    const syncTheme = useCallback((): void => {
-        if (window.toolboxAPI?.utils?.getCurrentTheme) {
-            window.toolboxAPI.utils
-                .getCurrentTheme()
-                .then((theme: string) => setIsDarkTheme(theme === "dark"))
-                .catch(() => setIsDarkTheme(false));
-        }
-    }, []);
-
-    useEffect(() => {
-        syncTheme();
-    }, [syncTheme]);
+    const { label: formatLabel } = FORMATS[outputFormat];
 
     useEffect(() => {
         return () => {
@@ -241,30 +228,10 @@ export function CodeTab({ codeText, codeError, onCodeChange, onApplyCode, draft,
         };
     }, []);
 
-    useToolboxEvents(
-        useCallback(
-            (event) => {
-                if (event === "settings:updated") {
-                    syncTheme();
-                }
-            },
-            [syncTheme]
-        )
-    );
-
-    const displayedCode = useMemo(() => (outputFormat === "csv" ? serializeDraftToCsv(draft) : codeText), [outputFormat, draft, codeText]);
-
-    const isEditableMode = outputFormat === "json";
-    const { label: formatLabel, hint: formatHint } = FORMATS[outputFormat];
-    const lineCount = displayedCode.length > 0 ? displayedCode.split(/\r?\n/).length : 0;
-    const charCount = displayedCode.length;
-    const editorAriaLabel = `Code editor, ${formatLabel}${isEditableMode ? "" : ", read-only"}`;
-    const hintId = "code-editor-hint";
-
     const handleExport = async (): Promise<void> => {
         const filename = `${schemaName || "optionset"}.${outputFormat}`;
         try {
-            const path = await window.toolboxAPI.fileSystem.saveFile(filename, displayedCode, [{ name: formatLabel, extensions: [outputFormat] }]);
+            const path = await window.toolboxAPI.fileSystem.saveFile(filename, getDisplayedCode(outputFormat, draft, codeText), [{ name: formatLabel, extensions: [outputFormat] }]);
             if (path) {
                 await window.toolboxAPI.utils.showNotification({
                     title: "Exported",
@@ -285,7 +252,7 @@ export function CodeTab({ codeText, codeError, onCodeChange, onApplyCode, draft,
 
     const handleCopy = async (): Promise<void> => {
         try {
-            await navigator.clipboard.writeText(displayedCode);
+            await navigator.clipboard.writeText(getDisplayedCode(outputFormat, draft, codeText));
             setIsCopied(true);
             if (copyTimeoutRef.current !== undefined) {
                 window.clearTimeout(copyTimeoutRef.current);
@@ -297,28 +264,83 @@ export function CodeTab({ codeText, codeError, onCodeChange, onApplyCode, draft,
     };
 
     return (
+        <div className={styles.actions}>
+            {outputFormat === "json" && (
+                <Button appearance="primary" size="small" icon={<ArrowSyncRegular />} onClick={onApplyCode}>
+                    Apply to Builder
+                </Button>
+            )}
+            <Button size="small" icon={isCopied ? <CheckmarkRegular /> : <CopyRegular />} onClick={() => void handleCopy()}>
+                {isCopied ? "Copied" : "Copy"}
+            </Button>
+            <Tooltip content={`Save the ${formatLabel} to a file`} relationship="description">
+                <Button size="small" icon={<ArrowDownloadRegular />} onClick={() => void handleExport()}>
+                    Download
+                </Button>
+            </Tooltip>
+            <div aria-live="polite" aria-atomic="true" className={styles.srOnly}>
+                {isCopied && "Code copied to clipboard"}
+            </div>
+        </div>
+    );
+}
+
+interface CodeTabProps {
+    codeText: string;
+    codeError: string | null;
+    onCodeChange: (code: string) => void;
+    draft: OptionSetDraft;
+    outputFormat: CodeFormat;
+    onOutputFormatChange: (format: CodeFormat) => void;
+}
+
+export function CodeTab({ codeText, codeError, onCodeChange, draft, outputFormat, onOutputFormatChange }: CodeTabProps): JSX.Element {
+    const styles = useStyles();
+    const [isDarkTheme, setIsDarkTheme] = useState(true);
+
+    const syncTheme = useCallback((): void => {
+        if (window.toolboxAPI?.utils?.getCurrentTheme) {
+            window.toolboxAPI.utils
+                .getCurrentTheme()
+                .then((theme: string) => setIsDarkTheme(theme === "dark"))
+                .catch(() => setIsDarkTheme(false));
+        }
+    }, []);
+
+    useEffect(() => {
+        syncTheme();
+    }, [syncTheme]);
+
+    useToolboxEvents(
+        useCallback(
+            (event) => {
+                if (event === "settings:updated") {
+                    syncTheme();
+                }
+            },
+            [syncTheme]
+        )
+    );
+
+    const displayedCode = useMemo(() => getDisplayedCode(outputFormat, draft, codeText), [outputFormat, draft, codeText]);
+
+    const isEditableMode = outputFormat === "json";
+    const { label: formatLabel, hint: formatHint } = FORMATS[outputFormat];
+    const lineCount = displayedCode.length > 0 ? displayedCode.split(/\r?\n/).length : 0;
+    const charCount = displayedCode.length;
+    const editorAriaLabel = `Code editor, ${formatLabel}${isEditableMode ? "" : ", read-only"}`;
+    const hintId = "code-editor-hint";
+
+    return (
         <section className={styles.root} aria-label="Code">
             <div className={styles.header}>
-                <TabList size="small" selectedValue={outputFormat} onTabSelect={(_, data) => setOutputFormat(data.value as OutputFormat)} aria-label="Output format">
-                    {(Object.keys(FORMATS) as OutputFormat[]).map((fmt) => (
+                <TabList size="small" selectedValue={outputFormat} onTabSelect={(_, data) => onOutputFormatChange(data.value as CodeFormat)} aria-label="Output format">
+                    {(Object.keys(FORMATS) as CodeFormat[]).map((fmt) => (
                         <Tab key={fmt} value={fmt}>
                             {FORMATS[fmt].label}
                         </Tab>
                     ))}
                 </TabList>
-                <div className={styles.actions}>
-                    {isEditableMode && (
-                        <Button appearance="primary" size="small" icon={<ArrowSyncRegular />} onClick={onApplyCode}>
-                            Apply to Builder
-                        </Button>
-                    )}
-                    <Tooltip content={isCopied ? "Copied" : `Copy ${formatLabel}`} relationship="label">
-                        <Button appearance="subtle" size="small" icon={isCopied ? <CheckmarkRegular /> : <CopyRegular />} onClick={() => void handleCopy()} />
-                    </Tooltip>
-                    <Tooltip content={`Export ${formatLabel} to a file`} relationship="label">
-                        <Button appearance="subtle" size="small" icon={<ArrowDownloadRegular />} onClick={() => void handleExport()} />
-                    </Tooltip>
-                </div>
             </div>
 
             <CodeMirrorEditor
@@ -344,10 +366,6 @@ export function CodeTab({ codeText, codeError, onCodeChange, onApplyCode, draft,
                     {formatHint}
                 </Text>
                 <Text size={200}>{`${lineCount} lines, ${charCount} chars`}</Text>
-            </div>
-
-            <div aria-live="polite" aria-atomic="true" className={styles.srOnly}>
-                {isCopied && "Code copied to clipboard"}
             </div>
         </section>
     );

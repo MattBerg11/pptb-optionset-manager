@@ -5,7 +5,7 @@ import { DataverseMetadataService } from "../services/dataverseMetadataService";
 import { ConfirmDialog, EmptyState } from "../components/shared";
 import { ActionBar, StatusBar, TabNavigation } from "../components/editor";
 import { BuilderTab } from "../components/editor";
-import { CodeTab } from "../components/editor/CodeTab";
+import { CodeTab, CodeTabActions, type CodeFormat } from "../components/editor/CodeTab";
 import { ConflictDialog, ImportModal, SaveProgressDialog, SaveReviewDialog } from "../components/modals";
 import { SettingsPanel } from "../components/sidebars";
 import { SidebarPanel } from "../components/sidebars";
@@ -324,8 +324,21 @@ export function App(): JSX.Element {
 
     const connectionText = connection?.name ?? (isLoading ? "Checking connection\u2026" : "No active Dataverse connection.");
 
+    const [codeFormat, setCodeFormat] = useState<CodeFormat>("json");
+
     const actionButtons = useMemo(() => {
         const buttons: Array<{ key: string; element: JSX.Element }> = [];
+
+        // Validate and Save act on the Builder; the Code tab only offers its own actions
+        if (activeTab === "code") {
+            if (isGridActive) {
+                buttons.push({
+                    key: "code-actions",
+                    element: <CodeTabActions codeText={state.codeText} draft={state.draft} outputFormat={codeFormat} schemaName={state.draft.optionSetSchemaName} onApplyCode={actions.syncFromCode} />,
+                });
+            }
+            return buttons;
+        }
 
         if (activeTab === "builder") {
             buttons.push({
@@ -372,6 +385,11 @@ export function App(): JSX.Element {
         return buttons;
     }, [
         activeTab,
+        isGridActive,
+        codeFormat,
+        state.codeText,
+        state.draft,
+        actions.syncFromCode,
         handleValidate,
         openImport,
         openDeleteConfirm,
@@ -382,8 +400,6 @@ export function App(): JSX.Element {
         nothingToSave,
         hasValidated,
         saveLoadHook.computed.canSave,
-        state.draft.operation,
-        state.draft.scope,
     ]);
 
     const handleGlobalOptionSetLoaded = useCallback(
@@ -555,9 +571,9 @@ export function App(): JSX.Element {
                                         codeText={state.codeText}
                                         codeError={state.codeError}
                                         onCodeChange={actions.setCodeText}
-                                        onApplyCode={actions.syncFromCode}
                                         draft={state.draft}
-                                        schemaName={state.draft.optionSetSchemaName}
+                                        outputFormat={codeFormat}
+                                        onOutputFormatChange={setCodeFormat}
                                     />
                                 )
                             ) : (

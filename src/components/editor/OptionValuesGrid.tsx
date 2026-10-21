@@ -436,7 +436,7 @@ export function OptionValuesGrid({
                             title={reorderingToggled ? "Disable row reordering" : "Enable row reordering"}
                             aria-pressed={reorderingToggled}
                         >
-                            {reorderingToggled ? "Reordering On" : "Reorder"}
+                            Reorder
                         </Button>
                     )}
                     <Button appearance="primary" size="small" onClick={onAddRow}>
@@ -456,7 +456,7 @@ export function OptionValuesGrid({
                 {!reorderingAlwaysOn && (
                     <Tooltip content={reorderingToggled ? "Disable row reordering" : "Enable drag-to-reorder and Alt+\u2191/\u2193 keyboard shortcut"} relationship="description">
                         <Button appearance={reorderingToggled ? "primary" : "secondary"} size="small" onClick={() => setReorderingToggled((v) => !v)} aria-pressed={reorderingToggled}>
-                            {reorderingToggled ? "Reordering On" : "Reorder"}
+                            Reorder
                         </Button>
                     </Tooltip>
                 )}
