@@ -334,8 +334,8 @@ export function useSaveLoad(
         if (draft.scope !== "global" || draft.operation !== "update" || !draft.optionSetSchemaName) return;
         setState((prev) => ({ ...prev, status: "saving", error: null }));
         try {
+            // No publish afterwards: Dataverse publishes deletes on its own, and a failed publish here was reported as a failed delete
             await window.dataverseAPI.deleteGlobalOptionSet(draft.optionSetSchemaName);
-            await window.dataverseAPI.publishCustomizations();
             notify("Deleted", `Option set "${draft.optionSetSchemaName}" was deleted from Dataverse.`, "success", 4000);
             actions.resetDraft();
             setState({ status: "idle", error: null, successMessage: null, loadedOptionSetName: null, conflictDialog: { ...NO_CONFLICT } });
