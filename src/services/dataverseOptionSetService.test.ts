@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OptionDraftRow, OptionSetDraft } from "../models/optionSetModels";
-import { publishDraftTarget, upsertOptionSet } from "./dataverseOptionSetService";
+import { orderOptionSet, publishDraftTarget, upsertOptionSet } from "./dataverseOptionSetService";
 
 const EN = 1033;
 const DE = 1031;
@@ -168,5 +168,26 @@ describe("publishDraftTarget: publishes only what was changed", () => {
         await publishDraftTarget({ ...draft([]), scope: "local", entityLogicalName: "account", attributeLogicalName: "new_tier" });
         expect(api.publishCustomizations).toHaveBeenCalledWith("account");
         expect(api.execute).not.toHaveBeenCalled();
+    });
+});
+
+describe("orderOptionSet: State and Status columns are read-only", () => {
+    const local = (attributeType: OptionSetDraft["attributeType"]): OptionSetDraft => ({
+        ...draft([loaded]),
+        scope: "local",
+        entityLogicalName: "account",
+        attributeLogicalName: "statuscode",
+        attributeType,
+    });
+
+    it.each(["State", "Status"] as const)("refuses to reorder a %s column without calling Dataverse", async (type) => {
+        await expect(orderOptionSet(local(type))).rejects.toThrow(`${type} columns are read-only`);
+        expect(api.orderOption).not.toHaveBeenCalled();
+        expect(api.publishCustomizations).not.toHaveBeenCalled();
+    });
+
+    it("still reorders a Picklist column", async () => {
+        await orderOptionSet(local("Picklist"));
+        expect(api.orderOption).toHaveBeenCalledTimes(1);
     });
 });
