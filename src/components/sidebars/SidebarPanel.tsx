@@ -3,10 +3,9 @@ import { PlugDisconnectedRegular } from "@fluentui/react-icons";
 import type ToolBoxAPI from "@pptb/types/toolboxAPI";
 import { useState } from "react";
 import type { DataverseMetadataService } from "../../services/dataverseMetadataService";
-import type { ActivityEntry } from "../../hooks/useActivityLog";
 import type { MetadataSelection } from "../../models/metadataModels";
 import type { OptionSetDraft, OptionSetScope, GlobalOptionSetDetail, LocalChoiceDetail, ValidationIssue } from "../../models/optionSetModels";
-import { ActivityLog, ErrorLog, MetadataSelector } from ".";
+import { ErrorLog, MetadataSelector } from ".";
 import { ConfirmDialog } from "../shared";
 import { OptionSetPropertiesForm } from "./OptionSetPropertiesForm";
 import { ScopeSelector } from "./ScopeSelector";
@@ -107,11 +106,6 @@ export interface SidebarPanelProps {
     showSystemOptionSets: boolean;
     settingsLoading: boolean;
 
-    // Activity log
-    activityEntries: ActivityEntry[];
-    activityLogExpanded: boolean;
-    onActivityLogToggle: () => void;
-
     // Sidebar-level setting callbacks
     onToggleShowSystemOptionSets: (value: boolean) => void;
 
@@ -134,7 +128,6 @@ export interface SidebarPanelProps {
     // Metadata load handlers
     onGlobalOptionSetLoaded: (detail: GlobalOptionSetDetail) => void;
     onLocalChoiceLoaded: (detail: LocalChoiceDetail) => void;
-    onActivityEntry: (message: string, type: "added" | "removed" | "changed" | "loaded" | "reset") => void;
 
     // Validation issues for error log
     validationIssues: ValidationIssue[];
@@ -167,9 +160,6 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
         isLoading,
         showSystemOptionSets,
         settingsLoading,
-        activityEntries,
-        activityLogExpanded,
-        onActivityLogToggle,
         onToggleShowSystemOptionSets,
         getFieldError,
         onSetField,
@@ -181,7 +171,6 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
         metadataService,
         onGlobalOptionSetLoaded,
         onLocalChoiceLoaded,
-        onActivityEntry,
         validationIssues,
         onIssueClick,
         refreshMetadataSignal,
@@ -260,7 +249,6 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
                                 onSelectionChange={onUpdateMetadataSelection}
                                 onGlobalOptionSetLoaded={onGlobalOptionSetLoaded}
                                 onLocalChoiceLoaded={onLocalChoiceLoaded}
-                                onActivityEntry={onActivityEntry}
                                 showOptionSetPicker={!isCreating}
                                 isFormDirty={hasUnsavedChanges}
                                 refreshSignal={refreshMetadataSignal}
@@ -314,7 +302,6 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
                 onCancel={() => setPendingAction(null)}
             />
             <ErrorLog issues={validationIssues} onIssueClick={onIssueClick} />
-            <ActivityLog entries={activityEntries} isExpanded={activityLogExpanded} onToggle={onActivityLogToggle} />
         </aside>
     );
 }

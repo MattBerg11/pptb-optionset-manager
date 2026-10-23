@@ -7,7 +7,6 @@ export function usePageOrchestration() {
     const [settingsPanelOpen, setSettingsPanelOpen] = useState(false);
     const [importModalOpen, setImportModalOpen] = useState(false);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-    const [activityLogExpanded, setActivityLogExpanded] = useState(false);
     const [schemaNameManuallyEdited, setSchemaNameManuallyEdited] = useState(false);
     const [displayNameDirty, setDisplayNameDirty] = useState(false);
 
@@ -18,7 +17,6 @@ export function usePageOrchestration() {
     const closeImport = useCallback(() => setImportModalOpen(false), []);
     const openDeleteConfirm = useCallback(() => setDeleteConfirmOpen(true), []);
     const closeDeleteConfirm = useCallback(() => setDeleteConfirmOpen(false), []);
-    const toggleActivityLog = useCallback(() => setActivityLogExpanded((previous) => !previous), []);
 
     return {
         activeTab,
@@ -26,7 +24,6 @@ export function usePageOrchestration() {
         settingsPanelOpen,
         importModalOpen,
         deleteConfirmOpen,
-        activityLogExpanded,
         schemaNameManuallyEdited,
         displayNameDirty,
         setSchemaNameManuallyEdited,
@@ -37,6 +34,5 @@ export function usePageOrchestration() {
         closeImport,
         openDeleteConfirm,
         closeDeleteConfirm,
-        toggleActivityLog,
     };
 }

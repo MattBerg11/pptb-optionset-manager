@@ -136,6 +136,18 @@ export interface ConflictDialogState {
     removedRemotely: number;
 }
 
+export type SaveStepStatus = "running" | "done" | "failed";
+
+/** One line of the save progress log; reported again with the same id when its status changes. */
+export interface SaveStep {
+    id: string;
+    label: string;
+    status: SaveStepStatus;
+    detail?: string;
+}
+
+export type SaveStepReporter = (step: SaveStep) => void;
+
 export interface SaveLoadState {
     status: OperationStatus;
     error: string | null;

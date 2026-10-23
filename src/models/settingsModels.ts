@@ -43,9 +43,6 @@ export interface OptionSetManagerSettings {
     /** Include all environment languages as sub-rows when a row is expanded. */
     autoAddAllLanguages: boolean;
 
-    /** If true, show all languages in dropdowns regardless of environment. */
-    showAllLanguagesInDropdowns: boolean;
-
     // ── Table Preferences ──
 
     /** Hide the gear/advanced-properties icon on individual rows. */
@@ -74,7 +71,6 @@ export const DEFAULT_SETTINGS: OptionSetManagerSettings = {
     showSystemOptionSets: true,
     validateBlankTranslationRows: true,
     autoAddAllLanguages: false,
-    showAllLanguagesInDropdowns: false,
     hideRowAdvancedProperties: false,
     autoExpandSubrowsOnAdd: false,
     autoAddAllLanguagesOnAdd: false,

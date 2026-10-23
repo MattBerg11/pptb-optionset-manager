@@ -267,8 +267,7 @@ interface OptionValuesGridProps {
     autoAddAllLanguages?: boolean;
     autoAddEnglishSubrow?: boolean;
     dirtyRowIds?: ReadonlySet<string>;
-    /** Option values that already exist in Dataverse (their value can't be edited) */
-    lockedValues?: ReadonlySet<number>;
+    autoValues?: ReadonlyMap<string, number>;
     reorderingAlwaysOn?: boolean;
 }
 
@@ -295,7 +294,7 @@ export function OptionValuesGrid({
     autoAddAllLanguages,
     autoAddEnglishSubrow,
     dirtyRowIds,
-    lockedValues,
+    autoValues,
     reorderingAlwaysOn,
 }: OptionValuesGridProps): JSX.Element {
     const styles = useStyles();
@@ -437,7 +436,7 @@ export function OptionValuesGrid({
                             title={reorderingToggled ? "Disable row reordering" : "Enable row reordering"}
                             aria-pressed={reorderingToggled}
                         >
-                            {reorderingToggled ? "Reordering On" : "Reorder"}
+                            Reorder
                         </Button>
                     )}
                     <Button appearance="primary" size="small" onClick={onAddRow}>
@@ -457,7 +456,7 @@ export function OptionValuesGrid({
                 {!reorderingAlwaysOn && (
                     <Tooltip content={reorderingToggled ? "Disable row reordering" : "Enable drag-to-reorder and Alt+\u2191/\u2193 keyboard shortcut"} relationship="description">
                         <Button appearance={reorderingToggled ? "primary" : "secondary"} size="small" onClick={() => setReorderingToggled((v) => !v)} aria-pressed={reorderingToggled}>
-                            {reorderingToggled ? "Reordering On" : "Reorder"}
+                            Reorder
                         </Button>
                     </Tooltip>
                 )}
@@ -563,7 +562,7 @@ export function OptionValuesGrid({
                                         hideAdvancedProperties={hideRowAdvancedProperties}
                                         isDirty={dirtyRowIds?.has(row.rowId)}
                                         reorderingEnabled={isReorderingEnabled}
-                                        valueLocked={row.optionValue !== undefined && !!lockedValues?.has(row.optionValue)}
+                                        autoValue={autoValues?.get(row.rowId)}
                                     />
 
                                     {hasValidated && validationIssues.filter((i) => i.rowId === row.rowId).length > 0 && (

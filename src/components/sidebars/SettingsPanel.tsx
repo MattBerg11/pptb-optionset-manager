@@ -99,8 +99,8 @@ export function SettingsPanel({ isOpen, onClose, settings, onUpdateSettings, onR
         void onUpdateSettings(partial);
     };
 
-    // Filter to environment languages unless showAllLanguagesInDropdowns is on
-    const languageList = settings.showAllLanguagesInDropdowns || availableLanguageCodes.length === 0 ? LANGUAGE_CONFIGS : LANGUAGE_CONFIGS.filter((l) => availableLanguageCodes.includes(l.code));
+    // Only environment-installed languages can be imported
+    const languageList = availableLanguageCodes.length === 0 ? LANGUAGE_CONFIGS : LANGUAGE_CONFIGS.filter((l) => availableLanguageCodes.includes(l.code));
 
     return (
         <>
@@ -169,7 +169,7 @@ export function SettingsPanel({ isOpen, onClose, settings, onUpdateSettings, onR
                                 <Label weight="semibold" size="small">
                                     Languages shown in add language dropdown
                                 </Label>
-                                <div style={settings.showAllLanguagesInDropdowns ? { visibility: "hidden", pointerEvents: "none" } : undefined}>
+                                <div>
                                     <Dropdown
                                         multiselect
                                         value={languageList
@@ -213,20 +213,6 @@ export function SettingsPanel({ isOpen, onClose, settings, onUpdateSettings, onR
                                         By Code (1033, 1036, …)
                                     </Option>
                                 </Dropdown>
-                            </div>
-
-                            <Divider />
-
-                            <div className={styles.section}>
-                                <Checkbox
-                                    checked={settings.showAllLanguagesInDropdowns}
-                                    onChange={(_, data) => update({ showAllLanguagesInDropdowns: !!data.checked })}
-                                    label="Show all languages in dropdowns"
-                                    input={{ "aria-describedby": "desc-showAllLanguages" }}
-                                />
-                                <p id="desc-showAllLanguages" className={styles.checkboxDescription}>
-                                    By default only environment-installed languages are shown. Selecting a language not installed in Dataverse will result in a failed import.
-                                </p>
                             </div>
                         </div>
 

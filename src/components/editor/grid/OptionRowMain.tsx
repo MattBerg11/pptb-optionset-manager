@@ -26,8 +26,8 @@ interface OptionRowMainProps {
     hideAdvancedProperties?: boolean;
     isDirty?: boolean;
     reorderingEnabled?: boolean;
-    /** Existing Dataverse options can't change value; editing it would delete the original option on save. */
-    valueLocked?: boolean;
+    /** Value that will be assigned on save when the row has none; shown as the placeholder */
+    autoValue?: number;
 }
 
 export const OptionRowMain = memo(function OptionRowMain({
@@ -51,7 +51,7 @@ export const OptionRowMain = memo(function OptionRowMain({
     hideAdvancedProperties,
     isDirty,
     reorderingEnabled,
-    valueLocked,
+    autoValue,
 }: OptionRowMainProps): JSX.Element {
     const defaultLabel = row.labels.find((entry) => entry.languageCode === defaultLanguageCode) ?? row.labels[0];
     const colorInputRef = useRef<HTMLInputElement>(null);
@@ -182,17 +182,14 @@ export const OptionRowMain = memo(function OptionRowMain({
                 <Input
                     type="number"
                     size="small"
-                    appearance={valueLocked ? "filled-lighter" : "outline"}
                     min={MIN_OPTION_VALUE}
                     max={MAX_OPTION_VALUE}
                     step={0}
                     value={row.optionValue?.toString() ?? ""}
-                    placeholder="Auto"
-                    readOnly={valueLocked}
-                    title={valueLocked ? "Existing option values can't be changed. Delete the option and add a new one instead." : undefined}
+                    placeholder={autoValue !== undefined ? String(autoValue) : "Auto"}
                     className={mergeClasses(styles.inputFlex, styles.numberInput)}
                     style={{ width: "100%" }}
-                    aria-label={valueLocked ? "Numeric value (read-only, option already exists)" : "Numeric value"}
+                    aria-label="Numeric value"
                     onChange={(event) => {
                         const value = (event.target as HTMLInputElement).value;
                         const parsed = value ? Number(value) : undefined;
