@@ -137,6 +137,10 @@ export function MetadataSelector({
     const [filterMode, setFilterMode] = useState<"none" | "publisher" | "solution" | "both">("none");
     const [pendingGlobalOptionSetName, setPendingGlobalOptionSetName] = useState<string | null>(null);
     const [confirmGlobalOptionSetChangeOpen, setConfirmGlobalOptionSetChangeOpen] = useState(false);
+    // A local entity / attribute pick waiting for the user to confirm discarding unsaved changes
+    const [pendingLocalChange, setPendingLocalChange] = useState<{ kind: "entity" | "attribute"; value: string; name: string } | null>(null);
+    // Set once the user agrees to discard while switching entity, so picking that entity's attribute doesn't ask again
+    const discardConfirmedRef = useRef(false);
     const localChoiceGuardRef = useRef<{ cancelled: boolean } | null>(null);
     const optionSetDetailGuardRef = useRef<{ cancelled: boolean } | null>(null);
 
@@ -193,6 +197,16 @@ export function MetadataSelector({
 
     const handleEntityChange = (_: unknown, data: { optionValue?: string | undefined }): void => {
         const entityLogicalName = data.optionValue ?? "";
+        if (entityLogicalName === (selection.entityLogicalName ?? "")) return;
+        if (isFormDirty) {
+            const name = entities.find((e) => e.logicalName === entityLogicalName)?.displayName ?? entityLogicalName;
+            setPendingLocalChange({ kind: "entity", value: entityLogicalName, name });
+            return;
+        }
+        applyEntityChange(entityLogicalName);
+    };
+
+    const applyEntityChange = (entityLogicalName: string): void => {
         const entity = entities.find((e) => e.logicalName === entityLogicalName);
         onSelectionChange({
             entityLogicalName: entityLogicalName || null,
@@ -205,6 +219,17 @@ export function MetadataSelector({
 
     const handleAttributeChange = (_: unknown, data: { optionValue?: string | undefined }): void => {
         const attributeLogicalName = data.optionValue ?? "";
+        if (attributeLogicalName === (selection.attributeLogicalName ?? "")) return;
+        if (isFormDirty && !discardConfirmedRef.current) {
+            const name = attributes.find((a) => a.logicalName === attributeLogicalName)?.displayName ?? attributeLogicalName;
+            setPendingLocalChange({ kind: "attribute", value: attributeLogicalName, name });
+            return;
+        }
+        applyAttributeChange(attributeLogicalName);
+    };
+
+    const applyAttributeChange = (attributeLogicalName: string): void => {
+        discardConfirmedRef.current = false;
         const attribute = attributes.find((a) => a.logicalName === attributeLogicalName);
         onSelectionChange({
             attributeLogicalName: attributeLogicalName || null,
@@ -314,6 +339,18 @@ export function MetadataSelector({
         void handleGlobalOptionSetSelect(nextName);
     };
 
+    const confirmLocalChange = (): void => {
+        const change = pendingLocalChange;
+        setPendingLocalChange(null);
+        if (!change) return;
+        if (change.kind === "entity") {
+            discardConfirmedRef.current = true;
+            applyEntityChange(change.value);
+        } else {
+            applyAttributeChange(change.value);
+        }
+    };
+
     const confirmGlobalOptionSetChange = (): void => {
         if (!pendingGlobalOptionSetName) {
             setConfirmGlobalOptionSetChangeOpen(false);
@@ -366,6 +403,29 @@ export function MetadataSelector({
                                     setPendingGlobalOptionSetName(null);
                                 }}
                             >
+                                Cancel
+                            </Button>
+                        </DialogActions>
+                    </DialogBody>
+                </DialogSurface>
+            </Dialog>
+            <Dialog
+                open={pendingLocalChange !== null}
+                onOpenChange={(_, data) => {
+                    if (!data.open) setPendingLocalChange(null);
+                }}
+            >
+                <DialogSurface style={{ width: "min(28rem, calc(100vw - 2rem))" }}>
+                    <DialogBody>
+                        <DialogTitle>Discard unsaved changes?</DialogTitle>
+                        <DialogContent>
+                            You have unsaved changes in this form. Switching to {pendingLocalChange?.name || (pendingLocalChange?.kind === "entity" ? "another entity" : "another attribute")} will discard them.
+                        </DialogContent>
+                        <DialogActions>
+                            <Button appearance="primary" onClick={confirmLocalChange}>
+                                Discard and switch
+                            </Button>
+                            <Button appearance="secondary" onClick={() => setPendingLocalChange(null)}>
                                 Cancel
                             </Button>
                         </DialogActions>
