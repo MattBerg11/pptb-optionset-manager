@@ -307,11 +307,10 @@ export function App(): JSX.Element {
     // An existing option set with nothing changed has nothing to save
     const nothingToSave = state.draft.operation === "update" && !state.hasUnsavedChanges;
     const { handleSave } = saveLoadHook.handlers;
+    // Every save goes through the review: PPTB policy requires a preview and confirmation before schema changes
     const handleSaveClick = useCallback(() => {
-        if (!hasValidated) return;
-        if (settings.reviewBeforeSave) setReviewOpen(true);
-        else void handleSave();
-    }, [hasValidated, settings.reviewBeforeSave, handleSave]);
+        if (hasValidated) setReviewOpen(true);
+    }, [hasValidated]);
     const handleReviewConfirm = useCallback(() => {
         setReviewOpen(false);
         void handleSave();

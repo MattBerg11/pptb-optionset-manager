@@ -31,7 +31,7 @@ A [Power Platform ToolBox](https://powerplatformtoolbox.com) tool for creating a
 4. Edit labels, values and descriptions, add or remove rows, and reorder them. Expand a row to edit its other languages.
 5. Click **Validate**, then **Save**. Review the changes and confirm.
 
-Settings (the gear icon) control language sub-rows, validation of blank translations, the review step and more.
+Settings (the gear icon) control language sub-rows, validation of blank translations, reordering and more.
 
 ## What this tool changes
 
