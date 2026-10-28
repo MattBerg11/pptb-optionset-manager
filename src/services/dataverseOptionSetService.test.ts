@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OptionDraftRow, OptionSetDraft } from "../models/optionSetModels";
-import { upsertOptionSet } from "./dataverseOptionSetService";
+import { orderOptionSet, publishDraftTarget, upsertOptionSet } from "./dataverseOptionSetService";
 
 const EN = 1033;
 const DE = 1031;
@@ -12,8 +12,10 @@ function makeApi() {
         deleteOptionValue: vi.fn(async () => ({})),
         orderOption: vi.fn(async () => ({})),
         publishCustomizations: vi.fn(async () => undefined),
+        execute: vi.fn(async () => ({})),
         queryData: vi.fn(async () => ({})),
         createGlobalOptionSet: vi.fn(async () => ({})),
+        updateGlobalOptionSet: vi.fn(async () => undefined),
     };
 }
 
@@ -113,7 +115,7 @@ describe("upsertOptionSet: clearing fields on a loaded row", () => {
 
 describe("upsertOptionSet: publish failure", () => {
     it("still reports the created rows and returns a warning", async () => {
-        api.publishCustomizations.mockRejectedValueOnce(new Error("Publish timed out"));
+        api.execute.mockRejectedValueOnce(new Error("Publish timed out"));
         const result = await upsertOptionSet(draft([loaded, { rowId: "new", labels: [{ languageCode: EN, label: "New" }] }]), new Set(["new"]), new Set([loaded.optionValue!]), [loaded]);
 
         expect(result.summary.created).toBe(1);
@@ -140,5 +142,117 @@ describe("upsertOptionSet: changed option value", () => {
 
         expect(api.deleteOptionValue).not.toHaveBeenCalled();
         expect(result.summary).toMatchObject({ created: 0, deleted: 0, failed: 1 });
+    });
+});
+
+describe("upsertOptionSet: display name and description of an existing global set", () => {
+    const remote = {
+        "@odata.context": "https://org/api/data/v9.2/$metadata#GlobalOptionSetDefinitions/$entity",
+        "@odata.type": "#Microsoft.Dynamics.CRM.OptionSetMetadata",
+        MetadataId: "11111111-2222-3333-4444-555555555555",
+        Name: "new_status",
+        IsGlobal: true,
+        DisplayName: { LocalizedLabels: [{ Label: "Status", LanguageCode: EN }, { Label: "Zustand", LanguageCode: DE }], UserLocalizedLabel: { Label: "Status", LanguageCode: EN } },
+        Description: { LocalizedLabels: [], UserLocalizedLabel: null },
+        Options: [],
+    };
+    const loadedProperties = { displayName: "Status", description: "" };
+
+    const putCall = (): [string, Record<string, unknown>, Record<string, unknown>] => {
+        expect(api.updateGlobalOptionSet).toHaveBeenCalledTimes(1);
+        return api.updateGlobalOptionSet.mock.calls[0] as unknown as [string, Record<string, unknown>, Record<string, unknown>];
+    };
+
+    it("sends the read-back definition with only the changed label swapped, merging other languages", async () => {
+        api.queryData.mockResolvedValueOnce(remote);
+        const result = await upsertOptionSet({ ...draft([loaded]), displayName: "Project status" }, new Set(), new Set([loaded.optionValue!]), [loaded], undefined, loadedProperties);
+
+        const [id, definition, options] = putCall();
+        expect(id).toBe(remote.MetadataId);
+        expect(options).toMatchObject({ mergeLabels: true });
+        expect(definition).not.toHaveProperty("@odata.context");
+        expect(definition.Name).toBe("new_status");
+        expect(languages(definition.DisplayName)).toEqual([expect.objectContaining({ LanguageCode: EN, Label: "Project status" })]);
+        expect(definition.Description).toBe(remote.Description);
+        expect(result.propertiesUpdated).toBe(true);
+    });
+
+    it("updates the details before any option change", async () => {
+        api.queryData.mockResolvedValueOnce(remote);
+        const row: OptionDraftRow = { rowId: "new", labels: [{ languageCode: EN, label: "New" }] };
+        await upsertOptionSet({ ...draft([loaded, row]), description: "Tracks progress" }, new Set(["new"]), new Set([loaded.optionValue!]), [loaded], undefined, loadedProperties);
+
+        expect(languages(putCall()[1].Description)).toEqual([expect.objectContaining({ LanguageCode: EN, Label: "Tracks progress" })]);
+        expect(api.updateGlobalOptionSet.mock.invocationCallOrder[0]).toBeLessThan(api.insertOptionValue.mock.invocationCallOrder[0]);
+    });
+
+    it("stops the save with nothing written when the update fails", async () => {
+        api.queryData.mockResolvedValueOnce(remote);
+        api.updateGlobalOptionSet.mockRejectedValueOnce(new Error("Managed option set"));
+        const row: OptionDraftRow = { rowId: "new", labels: [{ languageCode: EN, label: "New" }] };
+
+        await expect(upsertOptionSet({ ...draft([loaded, row]), displayName: "Project status" }, new Set(["new"]), new Set([loaded.optionValue!]), [loaded], undefined, loadedProperties)).rejects.toThrow("Managed option set");
+        expect(api.insertOptionValue).not.toHaveBeenCalled();
+        expect(api.execute).not.toHaveBeenCalled();
+    });
+
+    it("does not touch the definition when only whitespace changed", async () => {
+        const result = await upsertOptionSet({ ...draft([loaded]), displayName: " Status " }, new Set(), new Set([loaded.optionValue!]), [loaded], undefined, loadedProperties);
+        expect(api.updateGlobalOptionSet).not.toHaveBeenCalled();
+        expect(result.propertiesUpdated).toBe(false);
+    });
+
+    it("never updates a local column's details", async () => {
+        const local: OptionSetDraft = { ...draft([loaded]), scope: "local", entityLogicalName: "account", attributeLogicalName: "new_tier", displayName: "Tier" };
+        await upsertOptionSet(local, new Set(), new Set([loaded.optionValue!]), [loaded], undefined, loadedProperties);
+        expect(api.updateGlobalOptionSet).not.toHaveBeenCalled();
+    });
+});
+
+describe("publishDraftTarget: publishes only what was changed", () => {
+    const publishXml = (): string => {
+        expect(api.execute).toHaveBeenCalledTimes(1);
+        const request = (api.execute.mock.calls[0] as unknown as [{ operationName: string; parameters: { ParameterXml: string } }])[0];
+        expect(request.operationName).toBe("PublishXml");
+        return request.parameters.ParameterXml;
+    };
+
+    it("publishes a global option set by name, never Publish All", async () => {
+        await publishDraftTarget(draft([]));
+        expect(publishXml()).toBe("<importexportxml><optionsets><optionset>new_status</optionset></optionsets></importexportxml>");
+        expect(api.publishCustomizations).not.toHaveBeenCalled();
+    });
+
+    it("publishes the table and its global choice for a local column bound to one", async () => {
+        await publishDraftTarget({ ...draft([]), scope: "local", entityLogicalName: "account", attributeLogicalName: "new_tier", globalOptionSetName: "new_tier" });
+        expect(publishXml()).toBe("<importexportxml><entities><entity>account</entity></entities><optionsets><optionset>new_tier</optionset></optionsets></importexportxml>");
+        expect(api.publishCustomizations).not.toHaveBeenCalled();
+    });
+
+    it("publishes just the table for a local choice", async () => {
+        await publishDraftTarget({ ...draft([]), scope: "local", entityLogicalName: "account", attributeLogicalName: "new_tier" });
+        expect(api.publishCustomizations).toHaveBeenCalledWith("account");
+        expect(api.execute).not.toHaveBeenCalled();
+    });
+});
+
+describe("orderOptionSet: State and Status columns are read-only", () => {
+    const local = (attributeType: OptionSetDraft["attributeType"]): OptionSetDraft => ({
+        ...draft([loaded]),
+        scope: "local",
+        entityLogicalName: "account",
+        attributeLogicalName: "statuscode",
+        attributeType,
+    });
+
+    it.each(["State", "Status"] as const)("refuses to reorder a %s column without calling Dataverse", async (type) => {
+        await expect(orderOptionSet(local(type))).rejects.toThrow(`${type} columns are read-only`);
+        expect(api.orderOption).not.toHaveBeenCalled();
+        expect(api.publishCustomizations).not.toHaveBeenCalled();
+    });
+
+    it("still reorders a Picklist column", async () => {
+        await orderOptionSet(local("Picklist"));
+        expect(api.orderOption).toHaveBeenCalledTimes(1);
     });
 });

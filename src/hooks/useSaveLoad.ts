@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import type { DataverseMetadataService } from "../services/dataverseMetadataService";
-import type { GlobalOptionSetDetail, LocalChoiceDetail, OperationResultRow, OptionDraftRow, OptionSetDraft, SaveLoadState, SaveStep, ValidationIssue } from "../models/optionSetModels";
+import { isReadOnlyAttributeType } from "../models/optionSetModels";
+import type { GlobalOptionSetDetail, LocalChoiceDetail, OperationResultRow, OptionDraftRow, OptionSetDraft, OptionSetProperties, SaveLoadState, SaveStep, ValidationIssue } from "../models/optionSetModels";
 import { upsertOptionSet } from "../services/dataverseOptionSetService";
 import type { ApplyDraftOptions } from "./useOptionSetBuilder";
 import { extractDescription, optionsToRows } from "../utils/optionRows";
@@ -104,6 +105,7 @@ export function useSaveLoad(
     dirtyRowIds: ReadonlySet<string>,
     loadedOptionValues: ReadonlySet<number>,
     baselineRows: readonly OptionDraftRow[],
+    baselineProperties: OptionSetProperties | null,
     actions: {
         setField: <K extends keyof OptionSetDraft>(field: K, value: OptionSetDraft[K]) => void;
         applyDraft: (nextDraft: OptionSetDraft, options?: ApplyDraftOptions) => void;
@@ -130,7 +132,8 @@ export function useSaveLoad(
     callbacksRef.current = callbacks;
 
     const hasBlockingErrors = issues.some((issue) => issue.severity === "error");
-    const isSaveable = draft.scope === "global" || (draft.scope === "local" && draft.operation === "update" && !!draft.entityLogicalName && !!draft.attributeLogicalName);
+    const isReadOnlyColumn = draft.scope === "local" && isReadOnlyAttributeType(draft.attributeType);
+    const isSaveable = draft.scope === "global" || (draft.scope === "local" && draft.operation === "update" && !!draft.entityLogicalName && !!draft.attributeLogicalName && !isReadOnlyColumn);
     const canSave = !hasBlockingErrors && draft.rows.length > 0 && !!connection && isSaveable;
 
     const notify = useCallback((title: string, body: string, type: "success" | "error", duration: number) => {
@@ -144,7 +147,7 @@ export function useSaveLoad(
         const reportStep = (step: SaveStep): void => setProgress((prev) => ({ ...prev, steps: applyStep(prev.steps, step) }));
 
         try {
-            const result = await upsertOptionSet(draft, dirtyRowIds, loadedOptionValues, baselineRows, reportStep);
+            const result = await upsertOptionSet(draft, dirtyRowIds, loadedOptionValues, baselineRows, reportStep, baselineProperties);
             // Record what did get through (created values, deletions) so a retry only sends what is still outstanding
             actionsRef.current.applySaveResult(result.rows);
 
@@ -165,6 +168,7 @@ export function useSaveLoad(
             }
 
             const parts: string[] = [];
+            if (result.propertiesUpdated) parts.push("details updated");
             if (result.summary.created > 0) parts.push(`${result.summary.created} created`);
             if (result.summary.updated > 0) parts.push(`${result.summary.updated} updated`);
             if (result.summary.deleted > 0) parts.push(`${result.summary.deleted} deleted`);
@@ -208,7 +212,7 @@ export function useSaveLoad(
         } finally {
             setProgress((prev) => ({ ...prev, finished: true }));
         }
-    }, [draft, dirtyRowIds, loadedOptionValues, baselineRows, metadataService, notify]);
+    }, [draft, dirtyRowIds, loadedOptionValues, baselineRows, baselineProperties, metadataService, notify]);
 
     const handleSave = useCallback(async () => {
         if (!canSave) {
@@ -262,6 +266,7 @@ export function useSaveLoad(
                     displayName: detail.DisplayName,
                     description: extractDescription(detail.Description),
                     globalOptionSetName: undefined,
+                    attributeType: undefined,
                     rows,
                     operation: "update",
                 });
@@ -306,6 +311,7 @@ export function useSaveLoad(
                     entityLogicalName: detail.entityLogicalName,
                     attributeLogicalName: detail.attributeLogicalName,
                     globalOptionSetName: boundGlobalName,
+                    attributeType: detail.attributeType,
                     optionSetSchemaName: detail.attributeLogicalName,
                     displayName: detail.attributeDisplayName,
                     description: "",
@@ -313,11 +319,13 @@ export function useSaveLoad(
                     operation: "update",
                 });
 
-                const successMessage = boundGlobalName
-                    ? `Loaded "${detail.attributeDisplayName}" with ${rows.length} options. This column uses the global choice "${boundGlobalName}", so changes apply everywhere it is used.`
-                    : `Loaded "${detail.attributeDisplayName}" with ${rows.length} options`;
+                const successMessage = isReadOnlyAttributeType(detail.attributeType)
+                    ? `Loaded "${detail.attributeDisplayName}" with ${rows.length} options. ${detail.attributeType} columns are read-only in this tool for now, so you can view and export them but not save.`
+                    : boundGlobalName
+                      ? `Loaded "${detail.attributeDisplayName}" with ${rows.length} options. This column uses the global choice "${boundGlobalName}", so changes apply everywhere it is used.`
+                      : `Loaded "${detail.attributeDisplayName}" with ${rows.length} options`;
                 setState((prev) => ({ ...prev, status: "success", error: null, successMessage: null, loadedOptionSetName: detail.attributeLogicalName }));
-                notify("Loaded", successMessage, "success", boundGlobalName ? 6000 : 3000);
+                notify("Loaded", successMessage, "success", boundGlobalName || isReadOnlyAttributeType(detail.attributeType) ? 6000 : 3000);
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : "Failed to load local choice options";
                 console.error("[SaveLoad] Local choice load failed:", error);
@@ -334,8 +342,8 @@ export function useSaveLoad(
         if (draft.scope !== "global" || draft.operation !== "update" || !draft.optionSetSchemaName) return;
         setState((prev) => ({ ...prev, status: "saving", error: null }));
         try {
+            // No publish afterwards: Dataverse publishes deletes on its own, and a failed publish here was reported as a failed delete
             await window.dataverseAPI.deleteGlobalOptionSet(draft.optionSetSchemaName);
-            await window.dataverseAPI.publishCustomizations();
             notify("Deleted", `Option set "${draft.optionSetSchemaName}" was deleted from Dataverse.`, "success", 4000);
             actions.resetDraft();
             setState({ status: "idle", error: null, successMessage: null, loadedOptionSetName: null, conflictDialog: { ...NO_CONFLICT } });
@@ -352,9 +360,11 @@ export function useSaveLoad(
     const saveTooltip = !connection
         ? "No Dataverse connection"
         : !isSaveable
-          ? draft.scope === "local"
-              ? "Load a local choice column first before saving changes"
-              : "Cannot save this option set type"
+          ? isReadOnlyColumn
+              ? `${draft.attributeType} columns are read-only in this tool for now`
+              : draft.scope === "local"
+                ? "Load a local choice column first before saving changes"
+                : "Cannot save this option set type"
           : hasBlockingErrors
             ? "The form must successfully validate before saving"
             : draft.rows.length === 0

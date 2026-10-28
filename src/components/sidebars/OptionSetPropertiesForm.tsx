@@ -46,8 +46,6 @@ export function OptionSetPropertiesForm({ draft, readOnly = false, getFieldError
     const prefix = draft.publisherPrefix && draft.operation !== "update" ? draft.publisherPrefix + "_" : "";
     const schemaSuffix = prefix && draft.optionSetSchemaName.startsWith(prefix) ? draft.optionSetSchemaName.slice(prefix.length) : draft.optionSetSchemaName;
     const schemaLocked = readOnly || draft.operation === "update";
-    // Only options are written for an existing set; a changed name/description would silently revert on the post-save reload
-    const isExisting = draft.operation === "update";
 
     if (readOnly) {
         return (
@@ -79,10 +77,9 @@ export function OptionSetPropertiesForm({ draft, readOnly = false, getFieldError
                 <Input
                     id="sidebar-displayName"
                     size="small"
-                    appearance={isExisting ? "filled-lighter" : "outline"}
+                    appearance="outline"
                     value={draft.displayName}
                     onChange={(_, data) => onDisplayNameChange(data.value)}
-                    readOnly={isExisting}
                     placeholder="My Option Set"
                     aria-invalid={!!getFieldError("displayName")}
                     aria-describedby={getFieldError("displayName") ? "err-displayName" : undefined}
@@ -126,13 +123,11 @@ export function OptionSetPropertiesForm({ draft, readOnly = false, getFieldError
                 <Input
                     id="sidebar-description"
                     size="small"
-                    appearance={isExisting ? "filled-lighter" : "outline"}
+                    appearance="outline"
                     value={draft.description}
                     onChange={(_, data) => onDescriptionChange(data.value)}
-                    readOnly={isExisting}
                     placeholder="Optional description…"
                 />
-                {isExisting && <span className={styles.fieldHint}>Renaming an existing option set isn't supported yet; only its options are saved.</span>}
             </div>
         </div>
     );

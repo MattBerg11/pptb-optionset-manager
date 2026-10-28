@@ -82,6 +82,7 @@ interface SaveReviewDialogProps {
     onRevertRow: (rowId: string) => void;
     onRestoreRow: (optionValue: number) => void;
     onRevertOrder: () => void;
+    onRevertProperties: () => void;
     onConfirm: () => void;
     onCancel: () => void;
 }
@@ -91,13 +92,15 @@ function describeTarget(draft: ReviewDraft): string {
     return `"${draft.optionSetSchemaName || draft.displayName}"`;
 }
 
-export function SaveReviewDialog({ open, draft, changeSet, onRevertRow, onRestoreRow, onRevertOrder, onConfirm, onCancel }: SaveReviewDialogProps): JSX.Element {
+export function SaveReviewDialog({ open, draft, changeSet, onRevertRow, onRestoreRow, onRevertOrder, onRevertProperties, onConfirm, onCancel }: SaveReviewDialogProps): JSX.Element {
     const styles = useStyles();
     const isUpdate = draft.operation === "update";
-    const total = changeSet.changes.length + (changeSet.orderChanged ? 1 : 0);
+    const propertiesChanged = changeSet.propertyDetails.length > 0;
+    const total = changeSet.changes.length + (changeSet.orderChanged ? 1 : 0) + (propertiesChanged ? 1 : 0);
 
     const summary = isUpdate
         ? `Changes to ${describeTarget(draft)} in Dataverse: ${[
+              propertiesChanged ? "details changed" : null,
               changeSet.added > 0 ? `${changeSet.added} added` : null,
               changeSet.modified > 0 ? `${changeSet.modified} updated` : null,
               changeSet.removed > 0 ? `${changeSet.removed} deleted` : null,
@@ -124,6 +127,24 @@ export function SaveReviewDialog({ open, draft, changeSet, onRevertRow, onRestor
                             <div className={styles.empty}>No pending changes.</div>
                         ) : (
                             <ul className={styles.list} aria-label="Pending changes">
+                                {propertiesChanged && (
+                                    <li className={styles.item}>
+                                        <Badge className={styles.badge} appearance="tint" color={BADGE.modified.color} size="medium">
+                                            {BADGE.modified.label}
+                                        </Badge>
+                                        <div className={styles.itemBody}>
+                                            <span className={styles.itemLabel}>Option set details</span>
+                                            {changeSet.propertyDetails.map((detail) => (
+                                                <span key={detail} className={styles.detail}>
+                                                    {detail}
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <Button size="small" appearance="subtle" icon={<ArrowUndoRegular />} onClick={onRevertProperties} aria-label="Revert option set details">
+                                            Revert
+                                        </Button>
+                                    </li>
+                                )}
                                 {changeSet.changes.map((change) => (
                                     <li key={`${change.kind}-${change.rowId}`} className={styles.item}>
                                         <Badge className={styles.badge} appearance="tint" color={BADGE[change.kind].color} size="medium">

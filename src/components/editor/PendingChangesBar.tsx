@@ -37,10 +37,11 @@ interface PendingChangesBarProps {
 /** Shows what Save will do to an existing option set, including deletions that are queued until then. */
 export function PendingChangesBar({ changeSet, onRestoreRow }: PendingChangesBarProps): JSX.Element | null {
     const styles = useStyles();
-    if (changeSet.changes.length === 0 && !changeSet.orderChanged) return null;
+    if (changeSet.changes.length === 0 && !changeSet.orderChanged && changeSet.propertyDetails.length === 0) return null;
 
     const removed = changeSet.changes.filter((change) => change.kind === "removed");
     const summary = [
+        changeSet.propertyDetails.length > 0 ? "details changed" : null,
         changeSet.added > 0 ? `${changeSet.added} added` : null,
         changeSet.modified > 0 ? `${changeSet.modified} modified` : null,
         removed.length > 0 ? `${removed.length} queued for deletion` : null,

@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getLanguageByCode } from "../components/shared/LanguageConfig";
 import { DEFAULT_LANGUAGE_CODE, EMPTY_DRAFT_TEMPLATE } from "../constants";
 import { EMPTY_METADATA_SELECTION, MetadataSelection } from "../models/metadataModels";
-import type { OperationResultRow, OptionDraftRow, OptionSetDraft, PreviewSummary, ValidationIssue } from "../models/optionSetModels";
+import type { OperationResultRow, OptionDraftRow, OptionSetDraft, OptionSetProperties, PreviewSummary, ValidationIssue } from "../models/optionSetModels";
 import { parseCodeToDraft, serializeDraftToCode } from "../services/codeGenerationService";
 import { parseImportText } from "../services/importParserService";
-import { type ChangeSet, computeChangeSet } from "../utils/changeSet";
+import { type ChangeSet, computeChangeSet, describePropertyChanges } from "../utils/changeSet";
 import { createRowId } from "../utils/createRowId";
 import { validateOptionSetDraft } from "../utils/optionSetValidation";
 
@@ -48,6 +48,7 @@ function lockIdentity(current: OptionSetDraft, next: OptionSetDraft): OptionSetD
         entityLogicalName: current.entityLogicalName,
         attributeLogicalName: current.attributeLogicalName,
         globalOptionSetName: current.globalOptionSetName,
+        attributeType: current.attributeType,
     };
 }
 
@@ -67,6 +68,8 @@ export interface BuilderState {
     loadedOptionValues: ReadonlySet<number>;
     /** Rows as last loaded from Dataverse; used on save to detect cleared fields */
     baselineRows: readonly OptionDraftRow[];
+    /** Display name and description as last loaded from Dataverse; null for a set that is not loaded */
+    baselineProperties: OptionSetProperties | null;
     /** Pending changes compared with the loaded option set (everything is "added" for a new one) */
     changeSet: ChangeSet;
     availableLanguageCodes: number[];
@@ -104,6 +107,8 @@ export interface BuilderActions {
     /** Bring back an option that was removed from the grid */
     restoreRow: (optionValue: number) => void;
     revertOrder: () => void;
+    /** Undo pending display name / description edits */
+    revertProperties: () => void;
     clearImportWarnings: () => void;
     setAvailableLanguageCodes: (codes: number[]) => void;
 }
@@ -123,6 +128,7 @@ export function useOptionSetBuilder(
     const [metadataSelection, setMetadataSelection] = useState<MetadataSelection>(EMPTY_METADATA_SELECTION);
     // Rows exactly as they exist in Dataverse. Rows are treated as immutable everywhere, so references can be shared with the grid.
     const [baselineRows, setBaselineRows] = useState<readonly OptionDraftRow[]>([]);
+    const [baselineProperties, setBaselineProperties] = useState<OptionSetProperties | null>(null);
     const [apiErrorRowIds, setApiErrorRowIdsState] = useState<ReadonlySet<string>>(() => new Set<string>());
     const [apiSuccessRowIds, setApiSuccessRowIdsState] = useState<ReadonlySet<string>>(() => new Set<string>());
     const [availableLanguageCodes, setAvailableLanguageCodesState] = useState<number[]>([]);
@@ -132,6 +138,8 @@ export function useOptionSetBuilder(
     draftRef.current = draft;
     const baselineRef = useRef(baselineRows);
     baselineRef.current = baselineRows;
+    const baselinePropertiesRef = useRef(baselineProperties);
+    baselinePropertiesRef.current = baselineProperties;
 
     // Validate draft and generate issues/preview
     const issues = useMemo(() => validateOptionSetDraft(draft, availableLanguageCodes, { validateBlankTranslationRows }), [draft, availableLanguageCodes, validateBlankTranslationRows]);
@@ -139,6 +147,12 @@ export function useOptionSetBuilder(
 
     const isLoadedSet = draft.operation === "update";
     const changeSet = useMemo(() => computeChangeSet(draft.rows, isLoadedSet ? baselineRows : [], draft.defaultLanguageCode, languageName), [draft.rows, draft.defaultLanguageCode, baselineRows, isLoadedSet]);
+    // Only a global set's own display name and description are saved; a local column's are read-only here
+    const propertyDetails = useMemo(
+        () => (isLoadedSet && draft.scope === "global" ? describePropertyChanges(baselineProperties, { displayName: draft.displayName, description: draft.description }) : []),
+        [isLoadedSet, draft.scope, draft.displayName, draft.description, baselineProperties]
+    );
+    const fullChangeSet = useMemo<ChangeSet>(() => ({ ...changeSet, propertyDetails }), [changeSet, propertyDetails]);
     const loadedOptionValues = useMemo<ReadonlySet<number>>(() => new Set(baselineRows.map((row) => row.optionValue).filter((value): value is number => value !== undefined)), [baselineRows]);
     const dirtyRowIds = useMemo<ReadonlySet<string>>(
         () => (isLoadedSet ? new Set(changeSet.changes.filter((change) => change.kind !== "removed").map((change) => change.rowId)) : new Set<string>()),
@@ -147,7 +161,7 @@ export function useOptionSetBuilder(
 
     // A loaded set is only "unsaved" when something differs from Dataverse; a new set once anything has been entered.
     const hasUnsavedChanges = useMemo(() => {
-        if (isLoadedSet) return changeSet.changes.length > 0 || changeSet.orderChanged;
+        if (isLoadedSet) return changeSet.changes.length > 0 || changeSet.orderChanged || propertyDetails.length > 0;
         return (
             draft.displayName.trim().length > 0 ||
             draft.optionSetSchemaName.trim().length > 0 ||
@@ -155,7 +169,7 @@ export function useOptionSetBuilder(
             draft.rows.length > 1 ||
             draft.rows.some((row) => (row.externalKey?.trim().length ?? 0) > 0 || row.labels.some((label) => label.label.trim().length > 0 || (label.description?.trim().length ?? 0) > 0))
         );
-    }, [draft, changeSet, isLoadedSet]);
+    }, [draft, changeSet, propertyDetails, isLoadedSet]);
 
     // Debounced code generation from draft changes (skipped when autoGenerateCode is off)
     useEffect(() => {
@@ -174,6 +188,7 @@ export function useOptionSetBuilder(
         setApiSuccessRowIdsState(new Set<string>());
         if (!options?.preserveLoaded) {
             setBaselineRows(nextDraft.operation === "update" ? nextDraft.rows : []);
+            setBaselineProperties(nextDraft.operation === "update" ? { displayName: nextDraft.displayName, description: nextDraft.description } : null);
         }
     }, []);
 
@@ -182,6 +197,7 @@ export function useOptionSetBuilder(
         if (field === "scope") {
             setApiErrorRowIdsState(new Set<string>());
             setBaselineRows([]);
+            setBaselineProperties(null);
         }
     }, []);
 
@@ -447,6 +463,12 @@ export function useOptionSetBuilder(
         });
     }, []);
 
+    const revertProperties = useCallback(() => {
+        const loaded = baselinePropertiesRef.current;
+        if (!loaded) return;
+        setDraft((prev) => ({ ...prev, displayName: loaded.displayName, description: loaded.description }));
+    }, []);
+
     const clearImportWarnings = useCallback(() => setImportWarnings([]), []);
 
     const setAvailableLanguageCodes = useCallback((codes: number[]) => {
@@ -467,7 +489,8 @@ export function useOptionSetBuilder(
             apiSuccessRowIds,
             loadedOptionValues,
             baselineRows,
-            changeSet,
+            baselineProperties,
+            changeSet: fullChangeSet,
             availableLanguageCodes,
             hasUnsavedChanges,
         },
@@ -490,6 +513,7 @@ export function useOptionSetBuilder(
             revertRow,
             restoreRow,
             revertOrder,
+            revertProperties,
             clearImportWarnings,
             setAvailableLanguageCodes,
         },

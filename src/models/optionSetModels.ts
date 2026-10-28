@@ -31,7 +31,18 @@ export interface OptionSetDraft {
     attributeLogicalName: string;
     /** Set when a local column is backed by a global choice; option edits must then target the global set. */
     globalOptionSetName?: string;
+    /** Type of the loaded local column. State and Status columns need their own Dataverse actions, so they are read-only for now. */
+    attributeType?: ChoiceAttributeType;
     rows: OptionDraftRow[];
+}
+
+/** Option set level properties of an existing global set that can be changed after creation (the schema name cannot) */
+export type OptionSetProperties = Pick<OptionSetDraft, "displayName" | "description">;
+
+export type ChoiceAttributeType = "Picklist" | "State" | "Status" | "MultiSelectPicklist";
+
+export function isReadOnlyAttributeType(type: ChoiceAttributeType | undefined): boolean {
+    return type === "State" || type === "Status";
 }
 
 export type ValidationSeverity = "error" | "warning";
@@ -69,6 +80,8 @@ export interface OptionSetOperationResult {
     };
     rows: OperationResultRow[];
     warnings?: string[];
+    /** The display name or description of an existing global set was updated */
+    propertiesUpdated?: boolean;
 }
 
 export interface ToolPreferences {
@@ -122,6 +135,7 @@ export interface LocalChoiceDetail {
     options: OptionMetadata[];
     isGlobal?: boolean;
     optionSetName?: string;
+    attributeType?: ChoiceAttributeType;
 }
 
 export type LocalMode = "local" | "localGlobal";
