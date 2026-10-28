@@ -602,6 +602,7 @@ export function App(): JSX.Element {
                     open={reviewOpen}
                     draft={state.draft}
                     changeSet={state.changeSet}
+                    connection={connection}
                     onRevertRow={actions.revertRow}
                     onRestoreRow={actions.restoreRow}
                     onRevertOrder={actions.revertOrder}
@@ -623,7 +624,12 @@ export function App(): JSX.Element {
                 <ConfirmDialog
                     open={deleteConfirmOpen}
                     title="Delete Option Set"
-                    message={<>Are you sure you want to delete "{state.draft.optionSetSchemaName}" from Dataverse? This cannot be undone.</>}
+                    message={
+                        <>
+                            Are you sure you want to delete "{state.draft.optionSetSchemaName}" from {connection ? <strong>{connection.name}</strong> : "Dataverse"}
+                            {connection?.environment === "Production" ? " (Production)" : ""}? This cannot be undone. Dataverse refuses the delete while a column still uses this option set.
+                        </>
+                    }
                     confirmLabel="Delete"
                     confirmIntent="danger"
                     cancelLabel="Cancel"

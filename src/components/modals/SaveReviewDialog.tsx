@@ -65,6 +65,19 @@ const useStyles = makeStyles({
     empty: {
         color: tokens.colorNeutralForeground3,
     },
+    environment: {
+        marginBottom: tokens.spacingVerticalS,
+        overflowWrap: "anywhere",
+    },
+    production: {
+        color: tokens.colorPaletteRedForeground1,
+        fontWeight: tokens.fontWeightSemibold,
+    },
+    noUndo: {
+        marginTop: tokens.spacingVerticalM,
+        fontSize: tokens.fontSizeBase200,
+        color: tokens.colorNeutralForeground2,
+    },
 });
 
 const BADGE: Record<RowChangeKind, { label: string; color: "success" | "warning" | "danger" }> = {
@@ -79,6 +92,8 @@ interface SaveReviewDialogProps {
     open: boolean;
     draft: ReviewDraft;
     changeSet: ChangeSet;
+    /** The connection the save goes to, named in the dialog so the target environment is confirmed too. */
+    connection: Pick<ToolBoxAPI.DataverseConnection, "name" | "url" | "environment"> | null;
     onRevertRow: (rowId: string) => void;
     onRestoreRow: (optionValue: number) => void;
     onRevertOrder: () => void;
@@ -92,7 +107,7 @@ function describeTarget(draft: ReviewDraft): string {
     return `"${draft.optionSetSchemaName || draft.displayName}"`;
 }
 
-export function SaveReviewDialog({ open, draft, changeSet, onRevertRow, onRestoreRow, onRevertOrder, onRevertProperties, onConfirm, onCancel }: SaveReviewDialogProps): JSX.Element {
+export function SaveReviewDialog({ open, draft, changeSet, connection, onRevertRow, onRestoreRow, onRevertOrder, onRevertProperties, onConfirm, onCancel }: SaveReviewDialogProps): JSX.Element {
     const styles = useStyles();
     const isUpdate = draft.operation === "update";
     const propertiesChanged = changeSet.propertyDetails.length > 0;
@@ -121,6 +136,12 @@ export function SaveReviewDialog({ open, draft, changeSet, onRevertRow, onRestor
                 <DialogBody>
                     <DialogTitle>Review changes</DialogTitle>
                     <DialogContent>
+                        {connection && (
+                            <div className={styles.environment}>
+                                Environment: <strong>{connection.name}</strong> ({connection.url})
+                                {connection.environment === "Production" && <span className={styles.production}> · Production</span>}
+                            </div>
+                        )}
                         <div className={styles.summary}>{summary}</div>
 
                         {total === 0 ? (
@@ -187,6 +208,7 @@ export function SaveReviewDialog({ open, draft, changeSet, onRevertRow, onRestor
                         {changeSet.removed > 0 && (
                             <div className={styles.warning}>Deleted options are removed from the option set. Records that already use them keep the stored number but no longer show a label.</div>
                         )}
+                        {total > 0 && <div className={styles.noUndo}>Saved changes can't be undone from this tool. To keep a backup, export the solution from Dataverse before saving.</div>}
                     </DialogContent>
                     <DialogActions>
                         <Button appearance="primary" onClick={onConfirm} disabled={total === 0}>

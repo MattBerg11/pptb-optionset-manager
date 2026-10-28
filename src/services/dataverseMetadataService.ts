@@ -510,7 +510,7 @@ export class DataverseMetadataService {
         if (DEBUG) console.log(`[OptionSetManager] Loading global optionset details: ${name}`);
 
         // No $select — PPTB returns the flat object for single-entity metadata paths.
-        const raw = await this.dataverseAPI.queryData(`GlobalOptionSetDefinitions(Name='${name}')`) as unknown as Record<string, unknown>;
+        const raw = await this.dataverseAPI.queryData(`GlobalOptionSetDefinitions(Name='${name.replace(/'/g, "''")}')`) as unknown as Record<string, unknown>;
 
         const displayNameRaw = raw["DisplayName"] as { UserLocalizedLabel?: { Label: string }; LocalizedLabels?: Array<{ Label: string }> } | string | undefined;
         const displayName =

@@ -3,7 +3,7 @@
     "version": "0.3.9",
     "type": "module",
     "displayName": "OptionSet Manager",
-    "description": "Create, modify, and manage local and global Dataverse OptionSets (Choice fields) with bulk operations, import/export, and multi-language support.",
+    "description": "Create and edit Dataverse global choices and edit the options of local choice columns, with multi-language labels, a review step before saving, and CSV/JSON import and export.",
     "author": "Matt Berg",
     "main": "index.html",
     "icon": "icon.svg",
