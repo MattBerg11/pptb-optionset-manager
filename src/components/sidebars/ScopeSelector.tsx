@@ -27,7 +27,7 @@ const useStyles = makeStyles({
     },
     active: {
         backgroundColor: tokens.colorBrandBackground2,
-        color: tokens.colorNeutralForegroundOnBrand,
+        color: tokens.colorBrandForeground2,
         boxShadow: `inset 0 0 0 1px ${tokens.colorBrandStroke1}`,
     },
     inactive: {

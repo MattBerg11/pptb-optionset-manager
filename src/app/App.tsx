@@ -374,8 +374,9 @@ export function App(): JSX.Element {
         buttons.push({
             key: "save",
             element: (
-                <Tooltip key="save" content={nothingToSave ? "No changes to save" : !hasValidated && saveLoadHook.computed.canSave ? "Validate before saving" : saveLoadHook.computed.saveTooltip} relationship="description">
-                    <Button appearance="primary" size="small" onClick={handleSaveClick} disabled={saveLoadHook.computed.saveButtonDisabled || nothingToSave || !hasValidated}>
+                <Tooltip key="save" content={!saveLoadHook.computed.canSave ? saveLoadHook.computed.saveTooltip : nothingToSave ? "No changes to save" : !hasValidated ? "Validate before saving" : saveLoadHook.computed.saveTooltip} relationship="description">
+                    {/* disabledFocusable keeps hover and focus, so the tooltip can say why Save is off */}
+                    <Button appearance="primary" size="small" onClick={handleSaveClick} disabledFocusable={saveLoadHook.computed.saveButtonDisabled || nothingToSave || !hasValidated}>
                         {saveLoadHook.computed.saveButtonLabel}
                     </Button>
                 </Tooltip>
