@@ -269,7 +269,7 @@ export function App(): JSX.Element {
     const { isGridActive, activate: activateGrid, deactivate: deactivateGrid } = useGridActiveState(state.draft.operation);
     // Bumped when option sets are created / deleted so the sidebar picker reloads its list
     const [globalOptionSetsVersion, setGlobalOptionSetsVersion] = useState(0);
-    const saveLoadHook = useSaveLoad(state.draft, state.issues, connection, state.dirtyRowIds, state.loadedOptionValues, state.baselineRows, actions, metadataService, {
+    const saveLoadHook = useSaveLoad(state.draft, state.issues, connection, state.dirtyRowIds, state.loadedOptionValues, state.baselineRows, state.baselineProperties, actions, metadataService, {
         onGlobalOptionSetsChanged: (selected) => {
             setGlobalOptionSetsVersion((version) => version + 1);
             actions.updateMetadataSelection({ selectedGlobalOptionSetName: selected });
@@ -604,6 +604,7 @@ export function App(): JSX.Element {
                     onRevertRow={actions.revertRow}
                     onRestoreRow={actions.restoreRow}
                     onRevertOrder={actions.revertOrder}
+                    onRevertProperties={actions.revertProperties}
                     onConfirm={handleReviewConfirm}
                     onCancel={() => setReviewOpen(false)}
                 />

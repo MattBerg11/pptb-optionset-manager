@@ -1,7 +1,8 @@
 import { DEFAULT_LANGUAGE_CODE } from "../constants.ts";
 import { OptionSetOperationError } from "../models/optionSetErrors";
 import { isReadOnlyAttributeType } from "../models/optionSetModels";
-import type { OptionDraftRow, OptionSetDraft, OptionSetOperationResult, SaveStepReporter } from "../models/optionSetModels";
+import type { OptionDraftRow, OptionSetDraft, OptionSetOperationResult, OptionSetProperties, SaveStepReporter } from "../models/optionSetModels";
+import { changedProperties } from "../utils/changeSet";
 import { assignOptionValues } from "../utils/optionValues";
 
 // Returns a plain serializable Label object; avoids non-cloneable PPTB-internal objects from buildLabel().
@@ -131,6 +132,30 @@ async function globalOptionSetExists(name: string): Promise<boolean> {
     }
 }
 
+type LabelLike = { UserLocalizedLabel?: { LanguageCode?: number } | null } | null | undefined;
+
+// UpdateOptionSet is a PUT that replaces the whole definition, so the current one is read back and only the changed
+// labels are swapped. Each label is written in the language it was shown in; MergeLabels keeps its other languages.
+async function updateGlobalOptionSetProperties(
+    draft: OptionSetDraft,
+    changed: { displayName: boolean; description: boolean },
+    solutionOptions: { solutionUniqueName: string } | undefined
+): Promise<void> {
+    const current = (await window.dataverseAPI.queryData(`GlobalOptionSetDefinitions(Name='${draft.optionSetSchemaName.replace(/'/g, "''")}')`)) as unknown as Record<string, unknown>;
+    const metadataId = current["MetadataId"];
+    if (typeof metadataId !== "string") {
+        throw new OptionSetOperationError(`Could not read option set "${draft.optionSetSchemaName}" to update its details.`, "UpdateOptionSet");
+    }
+    const languageOf = (label: unknown): number => (label as LabelLike)?.UserLocalizedLabel?.LanguageCode ?? draft.defaultLanguageCode;
+
+    const definition: Record<string, unknown> = { ...current, "@odata.type": current["@odata.type"] ?? "Microsoft.Dynamics.CRM.OptionSetMetadata" };
+    delete definition["@odata.context"];
+    if (changed.displayName) definition.DisplayName = plainLabel(draft.displayName.trim(), languageOf(current["DisplayName"]));
+    if (changed.description) definition.Description = plainLabel(draft.description.trim(), languageOf(current["Description"]));
+
+    await window.dataverseAPI.updateGlobalOptionSet(metadataId, definition, { ...solutionOptions, mergeLabels: true });
+}
+
 function rowLabelFor(row: OptionDraftRow, defaultLanguageCode: number): string {
     return (row.labels.find((l) => l.languageCode === defaultLanguageCode)?.label || row.labels.find((l) => l.label.trim())?.label || "").trim();
 }
@@ -144,7 +169,8 @@ export async function upsertOptionSet(
     dirtyRowIds?: ReadonlySet<string>,
     loadedOptionValues?: ReadonlySet<number>,
     baselineRows: readonly OptionDraftRow[] = [],
-    onStep?: SaveStepReporter
+    onStep?: SaveStepReporter,
+    baselineProperties: OptionSetProperties | null = null
 ): Promise<OptionSetOperationResult> {
     const solutionOptions = draft.solutionUniqueName ? { solutionUniqueName: draft.solutionUniqueName } : undefined;
     const persisted = loadedOptionValues ?? new Set<number>();
@@ -196,6 +222,15 @@ export async function upsertOptionSet(
                 if (!(await globalOptionSetExists(draft.optionSetSchemaName))) throw createError;
             }
         }
+    }
+
+    // Display name / description of an existing global set. Runs before any option change, so a failure here
+    // stops the save with nothing written yet.
+    const changed = draft.scope === "global" && draft.operation === "update" ? changedProperties(baselineProperties, draft) : { displayName: false, description: false };
+    const propertiesUpdated = changed.displayName || changed.description;
+    if (propertiesUpdated) {
+        const what = [changed.displayName ? "display name" : null, changed.description ? "description" : null].filter(Boolean).join(" and ");
+        await runStep(`Updating option set ${what}`, () => updateGlobalOptionSetProperties(draft, changed, solutionOptions));
     }
 
     // Rows without a value get one from the publisher's range; if the prefix is unknown Dataverse assigns it on insert.
@@ -327,7 +362,7 @@ export async function upsertOptionSet(
         warnings.push(`Changes were saved but not published: ${normalizeError(publishError)}. Publish customizations in Dataverse to make them active.`);
     }
 
-    return { summary: { created, updated, skipped, deleted, failed }, rows: operationRows, warnings };
+    return { summary: { created, updated, skipped, deleted, failed }, rows: operationRows, warnings, propertiesUpdated };
 }
 
 export async function orderOptionSet(draft: TargetDraft & Pick<OptionSetDraft, "rows">): Promise<void> {

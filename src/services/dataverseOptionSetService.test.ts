@@ -15,6 +15,7 @@ function makeApi() {
         execute: vi.fn(async () => ({})),
         queryData: vi.fn(async () => ({})),
         createGlobalOptionSet: vi.fn(async () => ({})),
+        updateGlobalOptionSet: vi.fn(async () => undefined),
     };
 }
 
@@ -141,6 +142,70 @@ describe("upsertOptionSet: changed option value", () => {
 
         expect(api.deleteOptionValue).not.toHaveBeenCalled();
         expect(result.summary).toMatchObject({ created: 0, deleted: 0, failed: 1 });
+    });
+});
+
+describe("upsertOptionSet: display name and description of an existing global set", () => {
+    const remote = {
+        "@odata.context": "https://org/api/data/v9.2/$metadata#GlobalOptionSetDefinitions/$entity",
+        "@odata.type": "#Microsoft.Dynamics.CRM.OptionSetMetadata",
+        MetadataId: "11111111-2222-3333-4444-555555555555",
+        Name: "new_status",
+        IsGlobal: true,
+        DisplayName: { LocalizedLabels: [{ Label: "Status", LanguageCode: EN }, { Label: "Zustand", LanguageCode: DE }], UserLocalizedLabel: { Label: "Status", LanguageCode: EN } },
+        Description: { LocalizedLabels: [], UserLocalizedLabel: null },
+        Options: [],
+    };
+    const loadedProperties = { displayName: "Status", description: "" };
+
+    const putCall = (): [string, Record<string, unknown>, Record<string, unknown>] => {
+        expect(api.updateGlobalOptionSet).toHaveBeenCalledTimes(1);
+        return api.updateGlobalOptionSet.mock.calls[0] as unknown as [string, Record<string, unknown>, Record<string, unknown>];
+    };
+
+    it("sends the read-back definition with only the changed label swapped, merging other languages", async () => {
+        api.queryData.mockResolvedValueOnce(remote);
+        const result = await upsertOptionSet({ ...draft([loaded]), displayName: "Project status" }, new Set(), new Set([loaded.optionValue!]), [loaded], undefined, loadedProperties);
+
+        const [id, definition, options] = putCall();
+        expect(id).toBe(remote.MetadataId);
+        expect(options).toMatchObject({ mergeLabels: true });
+        expect(definition).not.toHaveProperty("@odata.context");
+        expect(definition.Name).toBe("new_status");
+        expect(languages(definition.DisplayName)).toEqual([expect.objectContaining({ LanguageCode: EN, Label: "Project status" })]);
+        expect(definition.Description).toBe(remote.Description);
+        expect(result.propertiesUpdated).toBe(true);
+    });
+
+    it("updates the details before any option change", async () => {
+        api.queryData.mockResolvedValueOnce(remote);
+        const row: OptionDraftRow = { rowId: "new", labels: [{ languageCode: EN, label: "New" }] };
+        await upsertOptionSet({ ...draft([loaded, row]), description: "Tracks progress" }, new Set(["new"]), new Set([loaded.optionValue!]), [loaded], undefined, loadedProperties);
+
+        expect(languages(putCall()[1].Description)).toEqual([expect.objectContaining({ LanguageCode: EN, Label: "Tracks progress" })]);
+        expect(api.updateGlobalOptionSet.mock.invocationCallOrder[0]).toBeLessThan(api.insertOptionValue.mock.invocationCallOrder[0]);
+    });
+
+    it("stops the save with nothing written when the update fails", async () => {
+        api.queryData.mockResolvedValueOnce(remote);
+        api.updateGlobalOptionSet.mockRejectedValueOnce(new Error("Managed option set"));
+        const row: OptionDraftRow = { rowId: "new", labels: [{ languageCode: EN, label: "New" }] };
+
+        await expect(upsertOptionSet({ ...draft([loaded, row]), displayName: "Project status" }, new Set(["new"]), new Set([loaded.optionValue!]), [loaded], undefined, loadedProperties)).rejects.toThrow("Managed option set");
+        expect(api.insertOptionValue).not.toHaveBeenCalled();
+        expect(api.execute).not.toHaveBeenCalled();
+    });
+
+    it("does not touch the definition when only whitespace changed", async () => {
+        const result = await upsertOptionSet({ ...draft([loaded]), displayName: " Status " }, new Set(), new Set([loaded.optionValue!]), [loaded], undefined, loadedProperties);
+        expect(api.updateGlobalOptionSet).not.toHaveBeenCalled();
+        expect(result.propertiesUpdated).toBe(false);
+    });
+
+    it("never updates a local column's details", async () => {
+        const local: OptionSetDraft = { ...draft([loaded]), scope: "local", entityLogicalName: "account", attributeLogicalName: "new_tier", displayName: "Tier" };
+        await upsertOptionSet(local, new Set(), new Set([loaded.optionValue!]), [loaded], undefined, loadedProperties);
+        expect(api.updateGlobalOptionSet).not.toHaveBeenCalled();
     });
 });
 

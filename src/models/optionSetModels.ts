@@ -36,6 +36,9 @@ export interface OptionSetDraft {
     rows: OptionDraftRow[];
 }
 
+/** Option set level properties of an existing global set that can be changed after creation (the schema name cannot) */
+export type OptionSetProperties = Pick<OptionSetDraft, "displayName" | "description">;
+
 export type ChoiceAttributeType = "Picklist" | "State" | "Status" | "MultiSelectPicklist";
 
 export function isReadOnlyAttributeType(type: ChoiceAttributeType | undefined): boolean {
@@ -77,6 +80,8 @@ export interface OptionSetOperationResult {
     };
     rows: OperationResultRow[];
     warnings?: string[];
+    /** The display name or description of an existing global set was updated */
+    propertiesUpdated?: boolean;
 }
 
 export interface ToolPreferences {

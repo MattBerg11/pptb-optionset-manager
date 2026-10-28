@@ -1,4 +1,4 @@
-import type { OptionDraftRow } from "../models/optionSetModels";
+import type { OptionDraftRow, OptionSetProperties } from "../models/optionSetModels";
 
 export type RowChangeKind = "added" | "modified" | "removed";
 
@@ -19,9 +19,11 @@ export interface ChangeSet {
     added: number;
     modified: number;
     removed: number;
+    /** Human-readable list of option set level differences (display name, description) */
+    propertyDetails: string[];
 }
 
-export const EMPTY_CHANGE_SET: ChangeSet = { changes: [], orderChanged: false, added: 0, modified: 0, removed: 0 };
+export const EMPTY_CHANGE_SET: ChangeSet = { changes: [], orderChanged: false, added: 0, modified: 0, removed: 0, propertyDetails: [] };
 
 type LanguageName = (languageCode: number) => string;
 
@@ -118,5 +120,24 @@ export function computeChangeSet(rows: readonly OptionDraftRow[], baseline: read
         added: changes.filter((c) => c.kind === "added").length,
         modified: changes.filter((c) => c.kind === "modified").length,
         removed: changes.filter((c) => c.kind === "removed").length,
+        propertyDetails: [],
     };
+}
+
+/** Which option set properties differ from what was loaded; whitespace-only edits don't count. */
+export function changedProperties(baseline: OptionSetProperties | null, current: OptionSetProperties): { displayName: boolean; description: boolean } {
+    if (!baseline) return { displayName: false, description: false };
+    return {
+        displayName: baseline.displayName.trim() !== current.displayName.trim(),
+        description: baseline.description.trim() !== current.description.trim(),
+    };
+}
+
+export function describePropertyChanges(baseline: OptionSetProperties | null, current: OptionSetProperties): string[] {
+    const changed = changedProperties(baseline, current);
+    const quoted = (text: string): string => (text.trim() ? `"${text.trim()}"` : "none");
+    const details: string[] = [];
+    if (baseline && changed.displayName) details.push(`Display name: ${quoted(baseline.displayName)} → ${quoted(current.displayName)}`);
+    if (baseline && changed.description) details.push(`Description: ${quoted(baseline.description)} → ${quoted(current.description)}`);
+    return details;
 }

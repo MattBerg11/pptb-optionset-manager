@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import type { DataverseMetadataService } from "../services/dataverseMetadataService";
 import { isReadOnlyAttributeType } from "../models/optionSetModels";
-import type { GlobalOptionSetDetail, LocalChoiceDetail, OperationResultRow, OptionDraftRow, OptionSetDraft, SaveLoadState, SaveStep, ValidationIssue } from "../models/optionSetModels";
+import type { GlobalOptionSetDetail, LocalChoiceDetail, OperationResultRow, OptionDraftRow, OptionSetDraft, OptionSetProperties, SaveLoadState, SaveStep, ValidationIssue } from "../models/optionSetModels";
 import { upsertOptionSet } from "../services/dataverseOptionSetService";
 import type { ApplyDraftOptions } from "./useOptionSetBuilder";
 import { extractDescription, optionsToRows } from "../utils/optionRows";
@@ -105,6 +105,7 @@ export function useSaveLoad(
     dirtyRowIds: ReadonlySet<string>,
     loadedOptionValues: ReadonlySet<number>,
     baselineRows: readonly OptionDraftRow[],
+    baselineProperties: OptionSetProperties | null,
     actions: {
         setField: <K extends keyof OptionSetDraft>(field: K, value: OptionSetDraft[K]) => void;
         applyDraft: (nextDraft: OptionSetDraft, options?: ApplyDraftOptions) => void;
@@ -146,7 +147,7 @@ export function useSaveLoad(
         const reportStep = (step: SaveStep): void => setProgress((prev) => ({ ...prev, steps: applyStep(prev.steps, step) }));
 
         try {
-            const result = await upsertOptionSet(draft, dirtyRowIds, loadedOptionValues, baselineRows, reportStep);
+            const result = await upsertOptionSet(draft, dirtyRowIds, loadedOptionValues, baselineRows, reportStep, baselineProperties);
             // Record what did get through (created values, deletions) so a retry only sends what is still outstanding
             actionsRef.current.applySaveResult(result.rows);
 
@@ -167,6 +168,7 @@ export function useSaveLoad(
             }
 
             const parts: string[] = [];
+            if (result.propertiesUpdated) parts.push("details updated");
             if (result.summary.created > 0) parts.push(`${result.summary.created} created`);
             if (result.summary.updated > 0) parts.push(`${result.summary.updated} updated`);
             if (result.summary.deleted > 0) parts.push(`${result.summary.deleted} deleted`);
@@ -210,7 +212,7 @@ export function useSaveLoad(
         } finally {
             setProgress((prev) => ({ ...prev, finished: true }));
         }
-    }, [draft, dirtyRowIds, loadedOptionValues, baselineRows, metadataService, notify]);
+    }, [draft, dirtyRowIds, loadedOptionValues, baselineRows, baselineProperties, metadataService, notify]);
 
     const handleSave = useCallback(async () => {
         if (!canSave) {
