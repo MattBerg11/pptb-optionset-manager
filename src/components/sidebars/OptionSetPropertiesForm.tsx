@@ -1,4 +1,4 @@
-import { InfoLabel, Input, makeStyles, tokens } from "@fluentui/react-components";
+import { InfoLabel, Input, makeStyles, Textarea, tokens } from "@fluentui/react-components";
 import type { OptionSetDraft } from "../../models/optionSetModels";
 
 interface OptionSetPropertiesFormProps {
@@ -37,6 +37,10 @@ const useStyles = makeStyles({
         fontSize: tokens.fontSizeBase200,
         userSelect: "none",
         paddingRight: tokens.spacingHorizontalXXS,
+    },
+    // About four lines, so most of a description is visible without scrolling
+    descriptionInput: {
+        minHeight: "88px",
     },
 });
 
@@ -120,10 +124,12 @@ export function OptionSetPropertiesForm({ draft, readOnly = false, getFieldError
                 <InfoLabel htmlFor="sidebar-description" size="medium" info="Optional documentation text describing this option set's purpose.">
                     Description
                 </InfoLabel>
-                <Input
+                <Textarea
                     id="sidebar-description"
                     size="small"
                     appearance="outline"
+                    resize="vertical"
+                    textarea={{ className: styles.descriptionInput }}
                     value={draft.description}
                     onChange={(_, data) => onDescriptionChange(data.value)}
                     placeholder="Optional description…"

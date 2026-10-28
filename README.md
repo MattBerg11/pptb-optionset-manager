@@ -4,6 +4,8 @@ A [Power Platform ToolBox](https://powerplatformtoolbox.com) tool for creating a
 
 ![OptionSet Manager editing a global choice with English, German and French labels](https://raw.githubusercontent.com/mattberg11/pptb-optionset-manager/main/docs/images/optionset-manager.png)
 
+![OptionSet Manager editing a local Channel choice column on a Ticket table, light theme](https://raw.githubusercontent.com/mattberg11/pptb-optionset-manager/main/docs/images/optionset-manager-local.png)
+
 ## Features
 
 - **Global choices**: create new ones in a solution, or load an existing one to edit its display name, description and options. Delete a global choice you no longer need.
