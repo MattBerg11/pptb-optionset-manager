@@ -17,7 +17,7 @@ import { useSettings } from "../hooks/useSettings";
 import { useConnection } from "../hooks/useToolboxAPI";
 import { useThemeSync } from "../hooks/useThemeSync";
 import { assignOptionValues } from "../utils/optionValues";
-import { solutionUrl, tableUrl } from "../utils/makerPortalLinks";
+import { solutionOptionSetsUrl, tableUrl } from "../utils/makerPortalLinks";
 import { useHasValidated } from "../hooks/useHasValidated";
 import { useGridActiveState } from "../hooks/useGridActiveState";
 import { useEnvironmentLanguages } from "../hooks/useEnvironmentLanguages";
@@ -325,7 +325,7 @@ export function App(): JSX.Element {
     const handleOpenInPowerApps = useCallback(async () => {
         try {
             const environmentId = await metadataService.getEnvironmentId();
-            const url = state.draft.scope === "local" ? tableUrl(environmentId, await metadataService.getEntityMetadataId(state.draft.entityLogicalName)) : solutionUrl(environmentId, state.metadataSelection.solutionId);
+            const url = state.draft.scope === "local" ? tableUrl(environmentId, await metadataService.getEntityMetadataId(state.draft.entityLogicalName)) : solutionOptionSetsUrl(environmentId, state.metadataSelection.solutionId);
             await window.toolboxAPI.utils.openInConnectionBrowser(url);
         } catch (err) {
             const msg = err instanceof Error ? err.message : "Failed to open Power Apps.";
@@ -367,7 +367,7 @@ export function App(): JSX.Element {
             buttons.push({
                 key: "open-in-power-apps",
                 element: (
-                    <Tooltip key="open-in-power-apps" content={state.draft.scope === "local" ? "Open this table in Power Apps" : "Open this choice's solution in Power Apps"} relationship="description">
+                    <Tooltip key="open-in-power-apps" content={state.draft.scope === "local" ? "Open this table in Power Apps" : "Open the option sets in this solution in Power Apps"} relationship="description">
                         <Button size="small" icon={<OpenRegular />} onClick={() => void handleOpenInPowerApps()}>
                             Open in Power Apps
                         </Button>

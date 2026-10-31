@@ -7,8 +7,9 @@ function environmentUrl(environmentId: string): string {
     return `${MAKER_PORTAL_URL}/environments/${encodeURIComponent(environmentId)}`;
 }
 
-export function solutionUrl(environmentId: string, solutionId?: string | null): string {
-    return `${environmentUrl(environmentId)}/solutions/${encodeURIComponent(solutionId || DEFAULT_SOLUTION_ID)}`;
+/** The list of option sets in a solution. */
+export function solutionOptionSetsUrl(environmentId: string, solutionId?: string | null): string {
+    return `${environmentUrl(environmentId)}/solutions/${encodeURIComponent(solutionId || DEFAULT_SOLUTION_ID)}/objects/option%20sets`;
 }
 
 /** The maker portal identifies tables by MetadataId; a logical name opens an unknown-table page. */
