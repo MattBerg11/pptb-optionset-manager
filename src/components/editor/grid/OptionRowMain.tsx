@@ -107,9 +107,9 @@ export const OptionRowMain = memo(function OptionRowMain({
                     </Tooltip>
                 </td>
             )}
-            {/* Chevron cell */}
-            <td className={mergeClasses(styles.td, styles.chevronCell)}>
-                {!singleLanguageMode && (
+            {/* Chevron cell, omitted entirely when no other languages are installed */}
+            {!singleLanguageMode && (
+                <td className={mergeClasses(styles.td, styles.chevronCell)}>
                     <Button
                         appearance="subtle"
                         size="small"
@@ -119,8 +119,8 @@ export const OptionRowMain = memo(function OptionRowMain({
                         aria-label={isExpanded ? "Collapse language options" : "Expand language options"}
                         aria-expanded={isExpanded}
                     />
-                )}
-            </td>
+                </td>
+            )}
             {/* Color cell */}
             <td className={mergeClasses(styles.td, styles.colorCell)}>
                 <button

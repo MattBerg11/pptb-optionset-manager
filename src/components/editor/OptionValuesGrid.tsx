@@ -421,7 +421,7 @@ export function OptionValuesGrid({
         [onUpdateRow]
     );
 
-    const colCount = isReorderingEnabled ? 7 : 6;
+    const colCount = 5 + (isReorderingEnabled ? 1 : 0) + (singleLanguageMode ? 0 : 1);
     const visibleRows = isVirtualized ? rows.slice(visibleStart, visibleEnd + 1) : rows;
 
     if (rows.length === 0) {
@@ -491,7 +491,7 @@ export function OptionValuesGrid({
                 <table className={styles.table} aria-label="Option values">
                     <colgroup>
                         {isReorderingEnabled && <col style={{ width: 36 }} />} {/* Drag handle column */}
-                        <col style={{ width: 42 }} /> {/* Chevron column */}
+                        {!singleLanguageMode && <col style={{ width: 42 }} />} {/* Chevron column, only when other languages are installed */}
                         <col style={{ width: 32 }} /> {/* Color column */}
                         <col style={{ width: "25%" }} /> {/* Label column */}
                         <col style={{ width: "15%" }} /> {/* Value column */}
@@ -501,8 +501,8 @@ export function OptionValuesGrid({
                     <thead className={styles.tableHead}>
                         <tr>
                             {isReorderingEnabled && <th className={mergeClasses(styles.th, styles.dragCell)} scope="col" />}
-                            <th className={mergeClasses(styles.th, styles.chevronCell)} scope="col">
-                                {!singleLanguageMode && (
+                            {!singleLanguageMode && (
+                                <th className={mergeClasses(styles.th, styles.chevronCell)} scope="col">
                                     <Button
                                         appearance="subtle"
                                         size="small"
@@ -512,8 +512,8 @@ export function OptionValuesGrid({
                                         aria-label={allExpanded ? "Collapse all rows" : "Expand all rows"}
                                         title={allExpanded ? "Collapse all" : "Expand all"}
                                     />
-                                )}
-                            </th>
+                                </th>
+                            )}
                             <th className={mergeClasses(styles.th, styles.colorCell)} scope="col" />
                             <th className={mergeClasses(styles.th, styles.columnProps)} scope="col">
                                 Label
