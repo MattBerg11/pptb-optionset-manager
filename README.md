@@ -69,7 +69,6 @@ In PPTB: **Debug → Load Local Tool** → select this project root → **Help �
 ```bash
 pnpm build
 pnpm validate
-pnpm finalize-package
 npm publish --access public
 ```
 

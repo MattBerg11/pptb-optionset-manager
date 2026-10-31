@@ -46,7 +46,6 @@
         "lint": "eslint .",
         "test": "vitest run",
         "test:watch": "vitest",
-        "finalize-package": "npm shrinkwrap",
         "validate": "pptb-validate",
         "version-stable": "npm version patch --no-git-tag-version",
         "publish-package": "pnpm run build && pnpm run version-stable && npm publish --access public"
@@ -81,7 +80,6 @@
         "vitest": "^5.0.5"
     },
     "files": [
-        "dist",
-        "npm-shrinkwrap.json"
+        "dist"
     ]
 }
