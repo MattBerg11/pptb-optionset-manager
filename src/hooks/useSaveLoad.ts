@@ -333,7 +333,7 @@ export function useSaveLoad(
         [actions, draft, notify]
     );
 
-    const saveButtonLabel = state.status === "saving" ? "Saving..." : "Save";
+    const saveButtonLabel = state.status === "saving" ? "Publishing..." : "Review & Publish";
     const saveButtonDisabled = !canSave || state.status === "saving" || state.status === "loading";
 
     const saveTooltip = !connection
@@ -342,13 +342,13 @@ export function useSaveLoad(
           ? isReadOnlyColumn
               ? `${draft.attributeType} columns are read-only in this tool for now`
               : draft.scope === "local"
-                ? "Load a local choice column first before saving changes"
-                : "Cannot save this option set type"
+                ? "Load a local choice column first before publishing changes"
+                : "Cannot publish this option set type"
           : hasBlockingErrors
-            ? "The form must successfully validate before saving"
+            ? "The form must successfully validate before publishing"
             : draft.rows.length === 0
               ? "Add at least one option"
-              : "Save option set to Dataverse";
+              : "Review your changes, then publish them to Dataverse";
 
     return {
         state,

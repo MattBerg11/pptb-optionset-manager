@@ -29,13 +29,13 @@ A [Power Platform ToolBox](https://powerplatformtoolbox.com) tool for creating a
 2. Pick a **Publisher** and **Solution**.
 3. For a global choice, pick one from **Global Option Set** to edit it, or click **New** to start one. For a local choice, pick the **Entity** and **Attribute**.
 4. Edit labels, values and descriptions, add or remove rows, and reorder them. Expand a row to edit its other languages.
-5. Click **Validate**, then **Save**. Review the changes and confirm.
+5. Click **Validate**, then **Review & Publish**. Review the changes and confirm.
 
 Settings (the gear icon) control language sub-rows, validation of blank translations, reordering and more.
 
 ## What this tool changes
 
-Nothing is written to Dataverse until you click **Save** and confirm. The confirmation names the connected environment.
+Nothing is written to Dataverse until you click **Review & Publish** and confirm. The confirmation names the connected environment.
 
 - **Global choices**: creates a new global choice in the selected solution and updates the display name and description of an existing one.
 - **Options** of a global choice or a local choice column: inserts new options; updates labels, descriptions, color, external value and the hidden flag; deletes options; and changes their order. A global choice is shared, so its changes apply to every column that uses it.
