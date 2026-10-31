@@ -9,9 +9,11 @@ interface UseVirtualScrollOptions {
     hasValidated: boolean;
     singleLanguageMode?: boolean;
     defaultLanguageCode: number;
+    /** Languages the add-language row can offer; the row is left out once a row has them all */
+    addableLanguageCodes: readonly number[];
 }
 
-export function useVirtualScroll({ rows, expandedRows, validationIssues, hasValidated, singleLanguageMode, defaultLanguageCode }: UseVirtualScrollOptions) {
+export function useVirtualScroll({ rows, expandedRows, validationIssues, hasValidated, singleLanguageMode, defaultLanguageCode, addableLanguageCodes }: UseVirtualScrollOptions) {
     const [viewport, setViewport] = useState({ scrollTop: 0, height: 600 });
     const isVirtualized = rows.length > GRID_VIRTUAL_THRESHOLD;
 
@@ -25,11 +27,12 @@ export function useVirtualScroll({ rows, expandedRows, validationIssues, hasVali
             }
             if (!singleLanguageMode && expandedRows.has(row.rowId)) {
                 const langCount = row.labels.filter((l) => l.languageCode !== defaultLanguageCode).length;
-                h += langCount * GRID_SUBROW_H + GRID_PICKER_ROW_H;
+                const hasPicker = addableLanguageCodes.some((code) => code !== defaultLanguageCode && !row.labels.some((l) => l.languageCode === code));
+                h += langCount * GRID_SUBROW_H + (hasPicker ? GRID_PICKER_ROW_H : 0);
             }
             return h;
         });
-    }, [isVirtualized, rows, hasValidated, validationIssues, singleLanguageMode, expandedRows, defaultLanguageCode]);
+    }, [isVirtualized, rows, hasValidated, validationIssues, singleLanguageMode, expandedRows, defaultLanguageCode, addableLanguageCodes]);
 
     const cumulativeOffsets = useMemo(() => {
         let cum = 0;

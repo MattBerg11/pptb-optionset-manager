@@ -1,7 +1,7 @@
 /**
  * Metadata Selector Component
  *
- * Global scope: Publisher → Solution (required) → Global OptionSets (searchable Combobox, auto-loads on select)
+ * Global scope: Publisher → Solution (optional) → Global OptionSets (searchable Combobox, auto-loads on select)
  * Local scope:  Publisher → Solution → Entity (table) → Choice Column
  */
 
@@ -100,6 +100,8 @@ const useStyles = makeStyles({
     },
 });
 
+const NO_ATTRIBUTE = { attributeLogicalName: null, attributeDisplayName: null, attributeSchemaName: null } as const;
+
 interface MetadataSelectorProps {
     metadataService: DataverseMetadataService;
     scope: OptionSetScope;
@@ -110,6 +112,8 @@ interface MetadataSelectorProps {
     onSelectionChange: (partial: Partial<MetadataSelection>) => void;
     onGlobalOptionSetLoaded?: (detail: GlobalOptionSetDetail) => void;
     onLocalChoiceLoaded?: (detail: LocalChoiceDetail) => void;
+    /** Closes whatever is open in the editor and discards its changes */
+    onCloseOptionSet?: () => void;
     /** Hide the "pick an existing option set" control while a brand-new option set is being authored */
     showOptionSetPicker?: boolean;
     isFormDirty?: boolean;
@@ -127,6 +131,7 @@ export function MetadataSelector({
     onSelectionChange,
     onGlobalOptionSetLoaded,
     onLocalChoiceLoaded,
+    onCloseOptionSet,
     showOptionSetPicker = true,
     isFormDirty = false,
     refreshSignal,
@@ -137,10 +142,8 @@ export function MetadataSelector({
     const [filterMode, setFilterMode] = useState<"none" | "publisher" | "solution" | "both">("none");
     const [pendingGlobalOptionSetName, setPendingGlobalOptionSetName] = useState<string | null>(null);
     const [confirmGlobalOptionSetChangeOpen, setConfirmGlobalOptionSetChangeOpen] = useState(false);
-    // A local entity / attribute pick waiting for the user to confirm discarding unsaved changes
-    const [pendingLocalChange, setPendingLocalChange] = useState<{ kind: "entity" | "attribute"; value: string; name: string } | null>(null);
-    // Set once the user agrees to discard while switching entity, so picking that entity's attribute doesn't ask again
-    const discardConfirmedRef = useRef(false);
+    // A local sidebar change waiting for the user to confirm discarding unsaved changes
+    const [pendingLocalChange, setPendingLocalChange] = useState<{ message: string; apply: () => void } | null>(null);
     const localChoiceGuardRef = useRef<{ cancelled: boolean } | null>(null);
     const optionSetDetailGuardRef = useRef<{ cancelled: boolean } | null>(null);
 
@@ -158,78 +161,82 @@ export function MetadataSelector({
     const narrowListboxStyle = { minWidth: "14rem", maxWidth: "20rem", width: "max-content" } as const;
     const wideListboxStyle = { minWidth: "20rem", maxWidth: "28rem", width: "max-content" } as const;
 
+    const runLocalChange = (message: string, apply: () => void): void => {
+        if (isFormDirty) setPendingLocalChange({ message, apply });
+        else apply();
+    };
+
+    // The sidebar stops pointing at the open column, so close it instead of leaving its options in the grid
+    const closeLocalColumn = (): void => {
+        if (localChoiceGuardRef.current) localChoiceGuardRef.current.cancelled = true;
+        setLoading("localChoice", false);
+        onCloseOptionSet?.();
+    };
+
     const handlePublisherChange = (_: unknown, data: { optionValue?: string | undefined }): void => {
         const publisherId = data.optionValue ?? "";
         const publisher = publishers.find((p) => p.publisherId === publisherId);
-        onSelectionChange({
-            publisherId: publisherId || null,
-            publisherName: publisher?.friendlyName ?? null,
-            publisherPrefix: publisher?.customizationPrefix ?? null,
-            optionValuePrefix: publisher?.optionValuePrefix ?? null,
-            solutionId: null,
-            solutionName: null,
-            solutionUniqueName: null,
-            selectedGlobalOptionSetName: null,
-        });
-        setOptionSetFilter("");
+        const apply = (): void => {
+            if (scope === "local") closeLocalColumn();
+            onSelectionChange({
+                publisherId: publisherId || null,
+                publisherName: publisher?.friendlyName ?? null,
+                publisherPrefix: publisher?.customizationPrefix ?? null,
+                optionValuePrefix: publisher?.optionValuePrefix ?? null,
+                solutionId: null,
+                solutionName: null,
+                solutionUniqueName: null,
+                selectedGlobalOptionSetName: null,
+                ...(scope === "local" ? { entityLogicalName: null, entityDisplayName: null, ...NO_ATTRIBUTE } : {}),
+            });
+            setOptionSetFilter("");
+        };
+        if (scope === "local") runLocalChange(`Switching to ${publisher?.friendlyName ?? "another publisher"} will discard them.`, apply);
+        else apply();
     };
 
     const handleSolutionChange = (_: unknown, data: { optionValue?: string | undefined }): void => {
         const solutionId = data.optionValue ?? "";
         const solution = solutions.find((s) => s.solutionId === solutionId);
-        onSelectionChange({
-            solutionId: solutionId || null,
-            solutionName: solution?.friendlyName ?? null,
-            solutionUniqueName: solution?.uniqueName ?? null,
-            ...(scope === "local"
-                ? {
-                      entityLogicalName: null,
-                      entityDisplayName: null,
-                      attributeLogicalName: null,
-                      attributeDisplayName: null,
-                      attributeSchemaName: null,
-                      selectedGlobalOptionSetName: null,
-                  }
-                : {}),
-        });
-        setOptionSetFilter("");
+        const apply = (): void => {
+            if (scope === "local") closeLocalColumn();
+            onSelectionChange({
+                solutionId: solutionId || null,
+                solutionName: solution?.friendlyName ?? null,
+                solutionUniqueName: solution?.uniqueName ?? null,
+                ...(scope === "local" ? { entityLogicalName: null, entityDisplayName: null, ...NO_ATTRIBUTE, selectedGlobalOptionSetName: null } : {}),
+            });
+            setOptionSetFilter("");
+        };
+        if (scope === "local") runLocalChange(`Switching to ${solution?.friendlyName ?? "another solution"} will discard them.`, apply);
+        else apply();
     };
 
     const handleEntityChange = (_: unknown, data: { optionValue?: string | undefined }): void => {
         const entityLogicalName = data.optionValue ?? "";
         if (entityLogicalName === (selection.entityLogicalName ?? "")) return;
-        if (isFormDirty) {
-            const name = entities.find((e) => e.logicalName === entityLogicalName)?.displayName ?? entityLogicalName;
-            setPendingLocalChange({ kind: "entity", value: entityLogicalName, name });
-            return;
-        }
-        applyEntityChange(entityLogicalName);
-    };
-
-    const applyEntityChange = (entityLogicalName: string): void => {
         const entity = entities.find((e) => e.logicalName === entityLogicalName);
-        onSelectionChange({
-            entityLogicalName: entityLogicalName || null,
-            entityDisplayName: entity?.displayName ?? null,
-            attributeLogicalName: null,
-            attributeDisplayName: null,
-            attributeSchemaName: null,
+        runLocalChange(`Switching to ${entity?.displayName ?? "another entity"} will discard them.`, () => {
+            closeLocalColumn();
+            onSelectionChange({ entityLogicalName: entityLogicalName || null, entityDisplayName: entity?.displayName ?? null, ...NO_ATTRIBUTE });
         });
     };
 
     const handleAttributeChange = (_: unknown, data: { optionValue?: string | undefined }): void => {
         const attributeLogicalName = data.optionValue ?? "";
         if (attributeLogicalName === (selection.attributeLogicalName ?? "")) return;
-        if (isFormDirty && !discardConfirmedRef.current) {
-            const name = attributes.find((a) => a.logicalName === attributeLogicalName)?.displayName ?? attributeLogicalName;
-            setPendingLocalChange({ kind: "attribute", value: attributeLogicalName, name });
-            return;
-        }
-        applyAttributeChange(attributeLogicalName);
+        const name = attributes.find((a) => a.logicalName === attributeLogicalName)?.displayName ?? "another attribute";
+        runLocalChange(`Switching to ${name} will discard them.`, () => applyAttributeChange(attributeLogicalName));
+    };
+
+    const handleAttributeClear = (): void => {
+        runLocalChange("Clearing the attribute will discard them.", () => {
+            closeLocalColumn();
+            onSelectionChange({ entityLogicalName: selection.entityLogicalName, entityDisplayName: selection.entityDisplayName, ...NO_ATTRIBUTE });
+        });
     };
 
     const applyAttributeChange = (attributeLogicalName: string): void => {
-        discardConfirmedRef.current = false;
         const attribute = attributes.find((a) => a.logicalName === attributeLogicalName);
         onSelectionChange({
             attributeLogicalName: attributeLogicalName || null,
@@ -342,13 +349,7 @@ export function MetadataSelector({
     const confirmLocalChange = (): void => {
         const change = pendingLocalChange;
         setPendingLocalChange(null);
-        if (!change) return;
-        if (change.kind === "entity") {
-            discardConfirmedRef.current = true;
-            applyEntityChange(change.value);
-        } else {
-            applyAttributeChange(change.value);
-        }
+        change?.apply();
     };
 
     const confirmGlobalOptionSetChange = (): void => {
@@ -418,9 +419,7 @@ export function MetadataSelector({
                 <DialogSurface style={{ width: "min(28rem, calc(100vw - 2rem))" }}>
                     <DialogBody>
                         <DialogTitle>Discard unsaved changes?</DialogTitle>
-                        <DialogContent>
-                            You have unsaved changes in this form. Switching to {pendingLocalChange?.name || (pendingLocalChange?.kind === "entity" ? "another entity" : "another attribute")} will discard them.
-                        </DialogContent>
+                        <DialogContent>You have unsaved changes in this form. {pendingLocalChange?.message}</DialogContent>
                         <DialogActions>
                             <Button appearance="primary" onClick={confirmLocalChange}>
                                 Discard and switch
@@ -474,13 +473,8 @@ export function MetadataSelector({
                             <div className={styles.labelRow}>
                                 <InfoLabel
                                     size="medium"
-                                    info="Dataverse requires every global Choice to belong to a solution for change tracking and ALM. Without a solution, the option set cannot be published or transported between environments."
+                                    info="Optional. Dataverse puts every global choice in the Default Solution. Pick an unmanaged solution to add it there too, so it can move to other environments with that solution."
                                 >
-                                    {!selection.selectedGlobalOptionSetName && (
-                                        <span className={styles.requiredMark} aria-hidden>
-                                            *
-                                        </span>
-                                    )}
                                     Solution
                                 </InfoLabel>
                                 {isLoading("solutions") && <Spinner size="tiny" />}
@@ -630,7 +624,7 @@ export function MetadataSelector({
 
                     <div className={styles.field}>
                         <div className={styles.labelRow}>
-                            <InfoLabel size="medium" info="The solution that contains the table you want to modify.">
+                            <InfoLabel size="medium" info="Optional. Lists only that solution's tables, and adds the column you change to the solution.">
                                 Solution
                             </InfoLabel>
                             {isLoading("solutions") && <Spinner size="tiny" />}
@@ -694,7 +688,7 @@ export function MetadataSelector({
 
                     <div className={styles.field}>
                         <div className={styles.labelRow}>
-                            <InfoLabel size="medium" info="The local choice (picklist) field on the selected table to edit.">
+                            <InfoLabel size="medium" info="The choice column on the selected table to edit. Status and Status Reason are listed for tables that have them; some system tables don't.">
                                 Attribute
                             </InfoLabel>
                             {(isLoading("attributes") || isLoading("localChoice")) && <Spinner size="tiny" />}
@@ -725,7 +719,7 @@ export function MetadataSelector({
                                     icon={<DismissRegular />}
                                     appearance="subtle"
                                     size="small"
-                                    onClick={() => onSelectionChange({ attributeLogicalName: null, attributeDisplayName: null, attributeSchemaName: null })}
+                                    onClick={handleAttributeClear}
                                     aria-label="Clear attribute selection"
                                 />
                             )}

@@ -7,7 +7,7 @@
     "author": "Matt Berg",
     "main": "index.html",
     "icon": "icon.svg",
-    "license": "MIT",
+    "license": "GPL-3.0-only",
     "contributors": [
         {
             "name": "Matt Berg",

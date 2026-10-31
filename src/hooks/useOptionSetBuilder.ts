@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getLanguageByCode } from "../components/shared/LanguageConfig";
 import { DEFAULT_LANGUAGE_CODE, EMPTY_DRAFT_TEMPLATE } from "../constants";
 import { EMPTY_METADATA_SELECTION, MetadataSelection } from "../models/metadataModels";
+import { isStatusColumn } from "../models/optionSetModels";
 import type { OperationResultRow, OptionDraftRow, OptionSetDraft, OptionSetProperties, PreviewSummary, ValidationIssue } from "../models/optionSetModels";
 import { parseCodeToDraft, serializeDraftToCode } from "../services/codeGenerationService";
 import { parseImportText } from "../services/importParserService";
@@ -49,6 +50,7 @@ function lockIdentity(current: OptionSetDraft, next: OptionSetDraft): OptionSetD
         attributeLogicalName: current.attributeLogicalName,
         globalOptionSetName: current.globalOptionSetName,
         attributeType: current.attributeType,
+        relatedOptions: current.relatedOptions,
     };
 }
 
@@ -141,8 +143,13 @@ export function useOptionSetBuilder(
     const baselinePropertiesRef = useRef(baselineProperties);
     baselinePropertiesRef.current = baselineProperties;
 
+    const loadedOptionValues = useMemo<ReadonlySet<number>>(() => new Set(baselineRows.map((row) => row.optionValue).filter((value): value is number => value !== undefined)), [baselineRows]);
+
     // Validate draft and generate issues/preview
-    const issues = useMemo(() => validateOptionSetDraft(draft, availableLanguageCodes, { validateBlankTranslationRows }), [draft, availableLanguageCodes, validateBlankTranslationRows]);
+    const issues = useMemo(
+        () => validateOptionSetDraft(draft, availableLanguageCodes, { validateBlankTranslationRows, loadedOptionValues }),
+        [draft, availableLanguageCodes, validateBlankTranslationRows, loadedOptionValues]
+    );
     const preview = summarizeIssues(issues, draft.rows.length);
 
     const isLoadedSet = draft.operation === "update";
@@ -153,7 +160,6 @@ export function useOptionSetBuilder(
         [isLoadedSet, draft.scope, draft.displayName, draft.description, baselineProperties]
     );
     const fullChangeSet = useMemo<ChangeSet>(() => ({ ...changeSet, propertyDetails }), [changeSet, propertyDetails]);
-    const loadedOptionValues = useMemo<ReadonlySet<number>>(() => new Set(baselineRows.map((row) => row.optionValue).filter((value): value is number => value !== undefined)), [baselineRows]);
     const dirtyRowIds = useMemo<ReadonlySet<string>>(
         () => (isLoadedSet ? new Set(changeSet.changes.filter((change) => change.kind !== "removed").map((change) => change.rowId)) : new Set<string>()),
         [changeSet, isLoadedSet]
@@ -209,6 +215,7 @@ export function useOptionSetBuilder(
                 {
                     rowId: createRowId(),
                     externalKey: "",
+                    stateCode: isStatusColumn(prev) ? prev.relatedOptions?.[0]?.value : undefined,
                     labels: [
                         {
                             languageCode: prev.defaultLanguageCode || DEFAULT_LANGUAGE_CODE,
@@ -256,11 +263,12 @@ export function useOptionSetBuilder(
         }
     }, [applyDraft, codeText]);
 
-    // Keeps the publisher / solution context (and default language) so several option sets can be created in a row.
+    // Keeps the scope, publisher / solution context (and default language) so several option sets can be created in a row.
     const resetDraft = useCallback(() => {
         const current = draftRef.current;
         applyDraft({
             ...createDefaultDraft(current.defaultLanguageCode),
+            scope: current.scope,
             publisherPrefix: current.publisherPrefix,
             optionValuePrefix: current.optionValuePrefix,
             solutionUniqueName: current.solutionUniqueName,

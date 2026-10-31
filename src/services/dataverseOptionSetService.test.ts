@@ -236,7 +236,7 @@ describe("publishDraftTarget: publishes only what was changed", () => {
     });
 });
 
-describe("orderOptionSet: State and Status columns are read-only", () => {
+describe("orderOptionSet: State columns can't be reordered", () => {
     const local = (attributeType: OptionSetDraft["attributeType"]): OptionSetDraft => ({
         ...draft([loaded]),
         scope: "local",
@@ -245,14 +245,82 @@ describe("orderOptionSet: State and Status columns are read-only", () => {
         attributeType,
     });
 
-    it.each(["State", "Status"] as const)("refuses to reorder a %s column without calling Dataverse", async (type) => {
-        await expect(orderOptionSet(local(type))).rejects.toThrow(`${type} columns are read-only`);
+    it("refuses to reorder a State column without calling Dataverse", async () => {
+        await expect(orderOptionSet(local("State"))).rejects.toThrow("can't be reordered");
         expect(api.orderOption).not.toHaveBeenCalled();
         expect(api.publishCustomizations).not.toHaveBeenCalled();
     });
 
-    it("still reorders a Picklist column", async () => {
-        await orderOptionSet(local("Picklist"));
+    it.each(["Status", "Picklist"] as const)("still reorders a %s column", async (type) => {
+        await orderOptionSet(local(type));
         expect(api.orderOption).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe("upsertOptionSet: Status Reason column", () => {
+    const reason: OptionDraftRow = { rowId: "r1", optionValue: 1, stateCode: 0, externalKey: "EXT", hidden: false, color: "#ff0000", labels: [{ languageCode: EN, label: "Active" }] };
+    const statusDraft = (rows: OptionDraftRow[]): OptionSetDraft => ({ ...draft(rows), scope: "local", entityLogicalName: "account", attributeLogicalName: "statuscode", attributeType: "Status", solutionUniqueName: "contoso" });
+    const execute = (): { operationName: string; operationType: string; parameters: Record<string, unknown> } => {
+        const calls = api.execute.mock.calls as unknown as Array<[{ operationName: string; operationType: string; parameters: Record<string, unknown> }]>;
+        return calls.map(([request]) => request).find((request) => request.operationName !== "PublishXml")!;
+    };
+
+    it("adds a new reason with InsertStatusValue under its Status", async () => {
+        const added: OptionDraftRow = { rowId: "new", stateCode: 1, color: "#00ff00", externalKey: "NOPE", hidden: true, labels: [{ languageCode: EN, label: "Frozen" }] };
+        api.execute.mockResolvedValueOnce({ NewOptionValue: 100000000 } as never);
+        const result = await upsertOptionSet(statusDraft([reason, added]), new Set(["new"]), new Set([1]), [reason]);
+
+        const request = execute();
+        expect(request).toMatchObject({ operationName: "InsertStatusValue", operationType: "action" });
+        expect(request.parameters).toMatchObject({ EntityLogicalName: "account", AttributeLogicalName: "statuscode", StateCode: 1, Color: "#00ff00", SolutionUniqueName: "contoso" });
+        expect(request.parameters).not.toHaveProperty("ExternalValue");
+        expect(request.parameters).not.toHaveProperty("IsHidden");
+        expect(api.insertOptionValue).not.toHaveBeenCalled();
+        expect(result.rows).toContainEqual(expect.objectContaining({ rowId: "new", status: "created", optionValue: 100000000 }));
+    });
+
+    it("relabels an existing reason with UpdateOptionValue and never sends StateCode", async () => {
+        await upsertOptionSet(statusDraft([{ ...reason, labels: [{ languageCode: EN, label: "Live" }] }]), new Set(["r1"]), new Set([1]), [reason]);
+
+        const params = updateParams();
+        expect(params).toMatchObject({ EntityLogicalName: "account", AttributeLogicalName: "statuscode", Value: 1, MergeLabels: true });
+        expect(params).not.toHaveProperty("StateCode");
+        expect(params).not.toHaveProperty("ExternalValue");
+        expect(params).not.toHaveProperty("IsHidden");
+    });
+
+    it("deletes a removed reason with DeleteOptionValue", async () => {
+        const other: OptionDraftRow = { ...reason, rowId: "r2", optionValue: 2 };
+        await upsertOptionSet(statusDraft([reason]), new Set(), new Set([1, 2]), [reason, other]);
+        expect(api.deleteOptionValue).toHaveBeenCalledWith(expect.objectContaining({ AttributeLogicalName: "statuscode", Value: 2 }));
+    });
+
+    it("recreates a reason under the same Status when its value changes", async () => {
+        await upsertOptionSet(statusDraft([{ ...reason, optionValue: 100000005 }]), new Set(["r1"]), new Set([1]), [reason]);
+        expect(execute().parameters).toMatchObject({ Value: 100000005, StateCode: 0 });
+        expect(api.deleteOptionValue).toHaveBeenCalledWith(expect.objectContaining({ Value: 1 }));
+    });
+});
+
+describe("upsertOptionSet: Status (statecode) column", () => {
+    const state: OptionDraftRow = { rowId: "s1", optionValue: 0, defaultStatusCode: 1, color: "#ff0000", labels: [{ languageCode: EN, label: "Active" }] };
+    const stateDraft = (rows: OptionDraftRow[]): OptionSetDraft => ({ ...draft(rows), scope: "local", entityLogicalName: "account", attributeLogicalName: "statecode", attributeType: "State", solutionUniqueName: "contoso" });
+    const updateState = (): Record<string, unknown> => {
+        const calls = api.execute.mock.calls as unknown as Array<[{ operationName: string; parameters: Record<string, unknown> }]>;
+        return calls.find(([request]) => request.operationName === "UpdateStateValue")![0].parameters;
+    };
+
+    it("relabels a Status with UpdateStateValue, sending only what that action takes", async () => {
+        await upsertOptionSet(stateDraft([{ ...state, labels: [{ languageCode: EN, label: "Open" }] }]), new Set(["s1"]), new Set([0]), [state]);
+
+        const params = updateState();
+        expect(params).toMatchObject({ EntityLogicalName: "account", AttributeLogicalName: "statecode", Value: 0, MergeLabels: true });
+        for (const key of ["Color", "ExternalValue", "IsHidden", "SolutionUniqueName", "DefaultStatusCode"]) expect(params).not.toHaveProperty(key);
+        expect(api.updateOptionValue).not.toHaveBeenCalled();
+    });
+
+    it("sends DefaultStatusCode only when it changed", async () => {
+        await upsertOptionSet(stateDraft([{ ...state, defaultStatusCode: 100000000 }]), new Set(["s1"]), new Set([0]), [state]);
+        expect(updateState().DefaultStatusCode).toBe(100000000);
     });
 });

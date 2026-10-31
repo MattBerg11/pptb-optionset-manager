@@ -19,6 +19,8 @@ interface LanguageSubRowProps {
     onUpdateLanguageDescription: (rowId: string, languageCode: number, description: string) => void;
     onRemoveLanguage: (rowId: string, languageCode: number) => void;
     reorderingEnabled?: boolean;
+    hasStatusColumn?: boolean;
+    readOnly?: boolean;
 }
 
 export const LanguageSubRow = memo(function LanguageSubRow({
@@ -34,9 +36,11 @@ export const LanguageSubRow = memo(function LanguageSubRow({
     onUpdateLanguageDescription,
     onRemoveLanguage,
     reorderingEnabled,
+    hasStatusColumn,
+    readOnly,
 }: LanguageSubRowProps): JSX.Element {
     // Only show language-change button when there are other available codes to switch to
-    const canChangeLang = availableLanguageCodes.some((c) => c !== langEntry.languageCode && !existingLanguageCodes.includes(c));
+    const canChangeLang = !readOnly && availableLanguageCodes.some((c) => c !== langEntry.languageCode && !existingLanguageCodes.includes(c));
     const langName = getLanguageByCode(langEntry.languageCode)?.name ?? `Language ${langEntry.languageCode}`;
 
     return (
@@ -83,10 +87,11 @@ export const LanguageSubRow = memo(function LanguageSubRow({
                     className={styles.inputFlex}
                     style={{ width: "100%" }}
                     aria-label={`${langName} label`}
+                    readOnly={readOnly}
                 />
             </td>
-            {/* colspan 2 spans the Value + Description columns of the main row */}
-            <td className={mergeClasses(styles.td, styles.languageSubrowDescriptionCell)} colSpan={2}>
+            {/* spans the Value, Status (when shown) and Description columns of the main row */}
+            <td className={mergeClasses(styles.td, styles.languageSubrowDescriptionCell)} colSpan={hasStatusColumn ? 3 : 2}>
                 <Input
                     type="text"
                     size="small"
@@ -96,18 +101,21 @@ export const LanguageSubRow = memo(function LanguageSubRow({
                     className={styles.inputFlex}
                     style={{ width: "100%" }}
                     aria-label={`${langName} description`}
+                    readOnly={readOnly}
                 />
             </td>
             <td className={mergeClasses(styles.td, styles.actionCell)}>
                 <div className={styles.actionButtons}>
-                    <Button
-                        appearance="subtle"
-                        size="small"
-                        icon={<DeleteRegular />}
-                        onClick={() => onRemoveLanguage(row.rowId, langEntry.languageCode)}
-                        title="Remove language"
-                        aria-label="Remove language"
-                    />
+                    {!readOnly && (
+                        <Button
+                            appearance="subtle"
+                            size="small"
+                            icon={<DeleteRegular />}
+                            onClick={() => onRemoveLanguage(row.rowId, langEntry.languageCode)}
+                            title="Remove language"
+                            aria-label="Remove language"
+                        />
+                    )}
                 </div>
             </td>
         </tr>

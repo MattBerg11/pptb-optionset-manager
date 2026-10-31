@@ -35,3 +35,85 @@ describe("getLocalChoiceOptions: attributeType", () => {
         expect(detail.options).toHaveLength(1);
     });
 });
+
+describe("getLocalChoiceOptions: State and Status columns", () => {
+    const label = (text: string) => ({ UserLocalizedLabel: { Label: text }, LocalizedLabels: [{ Label: text, LanguageCode: 1033 }] });
+    const state = { MetadataId: "state", Options: [{ Value: 0, Label: label("Active"), DefaultStatus: 1 }, { Value: 1, Label: label("Inactive"), DefaultStatus: 2 }] };
+    const status = { MetadataId: "status", Options: [{ Value: 1, Label: label("Active"), State: 0 }, { Value: 2, Label: label("Inactive"), State: 1 }] };
+    const service = new DataverseMetadataService({
+        getEntityRelatedMetadata: vi.fn(async (_entity: string, path: string) => {
+            if (path.includes("'statecode'") && path.includes("StateAttributeMetadata")) return state;
+            if (path.includes("'statuscode'") && path.includes("StatusAttributeMetadata")) return status;
+            throw new Error("Wrong type cast");
+        }),
+    } as unknown as DataverseAPI.API);
+
+    it("keeps each status reason's Status and lists the table's Status values", async () => {
+        const detail = await service.getLocalChoiceOptions("account", "statuscode", "Status Reason");
+        expect(detail.attributeType).toBe("Status");
+        expect(detail.options[1].State).toBe(1);
+        expect(detail.relatedOptions).toEqual([
+            { value: 0, label: "Active" },
+            { value: 1, label: "Inactive" },
+        ]);
+    });
+
+    it("reads Status options and their default status reason", async () => {
+        const detail = await service.getLocalChoiceOptions("account", "statecode", "Status");
+        expect(detail.attributeType).toBe("State");
+        expect(detail.options[1].DefaultStatus).toBe(2);
+        expect(detail.relatedOptions).toEqual([
+            { value: 1, label: "Active", stateCode: 0 },
+            { value: 2, label: "Inactive", stateCode: 1 },
+        ]);
+    });
+});
+
+describe("getLocalChoiceOptions: a column that uses a global choice", () => {
+    const options = [{ Value: 1, Label: { LocalizedLabels: [{ Label: "Gold", LanguageCode: 1033 }] } }];
+    // Right cast with nothing behind OptionSet, wrong casts rejected, as the failing column behaved
+    const relatedMetadata = vi.fn(async (_entity: string, path: string) => {
+        if (!path.includes("PicklistAttributeMetadata")) throw new Error("Wrong type cast");
+        return undefined;
+    });
+    const expandUrl = "EntityDefinitions(LogicalName='account')/Attributes(LogicalName='new_tier')/Microsoft.Dynamics.CRM.PicklistAttributeMetadata?$select=LogicalName&$expand=OptionSet,GlobalOptionSet";
+
+    it("reads the options by expanding the column and names the global choice", async () => {
+        const queryData = vi.fn(async (query: string) => {
+            if (query === expandUrl) return { OptionSet: null, GlobalOptionSet: { MetadataId: "gos", IsGlobal: true, Name: "new_tier", Options: options } };
+            throw new Error("Wrong type cast");
+        });
+        const service = new DataverseMetadataService({ getEntityRelatedMetadata: relatedMetadata, queryData } as unknown as DataverseAPI.API);
+
+        const detail = await service.getLocalChoiceOptions("account", "new_tier", "Tier");
+        expect(detail).toMatchObject({ isGlobal: true, optionSetName: "new_tier", attributeType: "Picklist" });
+        expect(detail.options).toHaveLength(1);
+    });
+
+    it("falls back to the global choice itself when the column only gives its name", async () => {
+        const queryData = vi.fn(async (query: string) => {
+            if (query === expandUrl) return { OptionSet: { MetadataId: "gos", IsGlobal: true, Name: "new_tier" }, GlobalOptionSet: null };
+            if (query === "GlobalOptionSetDefinitions(Name='new_tier')") return { Name: "new_tier", DisplayName: "Tier", Options: options };
+            throw new Error("Wrong type cast");
+        });
+        const service = new DataverseMetadataService({ getEntityRelatedMetadata: relatedMetadata, queryData } as unknown as DataverseAPI.API);
+
+        const detail = await service.getLocalChoiceOptions("account", "new_tier", "Tier");
+        expect(detail.isGlobal).toBe(true);
+        expect(detail.options[0].Value).toBe(1);
+    });
+});
+
+describe("getChoiceAttributes", () => {
+    it("lists multi-select columns, which Dataverse reports as Virtual, but not other Virtual columns", async () => {
+        const attribute = (LogicalName: string, AttributeType: string, typeName: string) => ({ LogicalName, SchemaName: LogicalName, AttributeType, AttributeTypeName: { Value: typeName } });
+        const value = [attribute("new_tags", "Virtual", "MultiSelectPicklistType"), attribute("new_photo", "Virtual", "ImageType"), attribute("statuscode", "Status", "StatusType"), attribute("name", "String", "StringType")];
+        const service = new DataverseMetadataService({ getEntityRelatedMetadata: vi.fn(async () => ({ value })) } as unknown as DataverseAPI.API);
+
+        const attributes = await service.getChoiceAttributes("account");
+        expect(attributes.map((a) => [a.logicalName, a.attributeType])).toEqual([
+            ["new_tags", "MultiSelectPicklist"],
+            ["statuscode", "Status"],
+        ]);
+    });
+});

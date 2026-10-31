@@ -66,8 +66,9 @@ export function OptionSetPropertiesForm({ draft, readOnly = false, getFieldError
                     </InfoLabel>
                     <Input id="sidebar-schemaName" size="small" appearance="filled-lighter" value={draft.optionSetSchemaName} readOnly />
                 </div>
-                {draft.globalOptionSetName && <span className={styles.fieldHint}>Uses the global choice "{draft.globalOptionSetName}". Changes apply everywhere it is used.</span>}
-                <span className={styles.fieldHint}>Column properties are read-only here; only its options can be edited.</span>
+                <span className={styles.fieldHint}>
+                    {draft.globalOptionSetName ? `Uses the global choice "${draft.globalOptionSetName}". Its options are edited on the Global tab.` : "Column properties are read-only here; only its options can be edited."}
+                </span>
             </div>
         );
     }

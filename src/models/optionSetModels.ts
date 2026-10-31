@@ -14,7 +14,19 @@ export interface OptionDraftRow {
     externalKey?: string;
     hidden?: boolean;
     color?: string;
+    /** Status Reason options only: the Status value this reason belongs to. */
+    stateCode?: number;
+    /** Status options only: the status reason a record gets when it enters this Status. */
+    defaultStatusCode?: number;
     labels: LanguageEntry[];
+}
+
+/** An option of the paired column: a Status for a Status Reason row, or a status reason for a Status row. */
+export interface RelatedOption {
+    value: number;
+    label: string;
+    /** Set on status reasons: the Status value they belong to */
+    stateCode?: number;
 }
 
 export interface OptionSetDraft {
@@ -29,10 +41,12 @@ export interface OptionSetDraft {
     defaultLanguageCode: number;
     entityLogicalName: string;
     attributeLogicalName: string;
-    /** Set when a local column is backed by a global choice; option edits must then target the global set. */
+    /** Set when a local column is backed by a global choice; its options are then read-only here and edited on the Global tab. */
     globalOptionSetName?: string;
-    /** Type of the loaded local column. State and Status columns need their own Dataverse actions, so they are read-only for now. */
+    /** Type of the loaded local column. State and Status columns have their own Dataverse actions and limits. */
     attributeType?: ChoiceAttributeType;
+    /** Options of the paired column when a State or Status column is loaded. */
+    relatedOptions?: RelatedOption[];
     rows: OptionDraftRow[];
 }
 
@@ -41,8 +55,21 @@ export type OptionSetProperties = Pick<OptionSetDraft, "displayName" | "descript
 
 export type ChoiceAttributeType = "Picklist" | "State" | "Status" | "MultiSelectPicklist";
 
-export function isReadOnlyAttributeType(type: ChoiceAttributeType | undefined): boolean {
-    return type === "State" || type === "Status";
+type ColumnKind = Pick<OptionSetDraft, "scope" | "attributeType">;
+
+/** statecode: its values are fixed by the table, so only labels, descriptions and the default status reason can change. */
+export function isStateColumn(draft: ColumnKind): boolean {
+    return draft.scope === "local" && draft.attributeType === "State";
+}
+
+/** statuscode: options are added with InsertStatusValue and each belongs to one State value. */
+export function isStatusColumn(draft: ColumnKind): boolean {
+    return draft.scope === "local" && draft.attributeType === "Status";
+}
+
+/** A local column that uses a global choice. Its options are shared, so they are edited on the Global tab. */
+export function isGlobalChoiceColumn(draft: Pick<OptionSetDraft, "scope" | "globalOptionSetName">): boolean {
+    return draft.scope === "local" && !!draft.globalOptionSetName;
 }
 
 export type ValidationSeverity = "error" | "warning";
@@ -122,6 +149,10 @@ export interface OptionMetadata {
     Color?: string;
     IsHidden?: boolean;
     ExternalValue?: string;
+    /** StatusOptionMetadata: the State value this status reason belongs to */
+    State?: number;
+    /** StateOptionMetadata: the default status reason of this State value */
+    DefaultStatus?: number;
 }
 
 export interface GlobalOptionSetDetail extends GlobalOptionSetSummary {
@@ -136,6 +167,7 @@ export interface LocalChoiceDetail {
     isGlobal?: boolean;
     optionSetName?: string;
     attributeType?: ChoiceAttributeType;
+    relatedOptions?: RelatedOption[];
 }
 
 export type LocalMode = "local" | "localGlobal";

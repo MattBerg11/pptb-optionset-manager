@@ -249,6 +249,7 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
                                 onSelectionChange={onUpdateMetadataSelection}
                                 onGlobalOptionSetLoaded={onGlobalOptionSetLoaded}
                                 onLocalChoiceLoaded={onLocalChoiceLoaded}
+                                onCloseOptionSet={onResetDraft}
                                 showOptionSetPicker={!isCreating}
                                 isFormDirty={hasUnsavedChanges}
                                 refreshSignal={refreshMetadataSignal}

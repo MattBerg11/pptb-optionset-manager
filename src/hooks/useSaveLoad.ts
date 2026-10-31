@@ -1,6 +1,5 @@
 import { useCallback, useRef, useState } from "react";
 import type { DataverseMetadataService } from "../services/dataverseMetadataService";
-import { isReadOnlyAttributeType } from "../models/optionSetModels";
 import type { GlobalOptionSetDetail, LocalChoiceDetail, OperationResultRow, OptionDraftRow, OptionSetDraft, OptionSetProperties, SaveLoadState, SaveStep, ValidationIssue } from "../models/optionSetModels";
 import { upsertOptionSet } from "../services/dataverseOptionSetService";
 import type { ApplyDraftOptions } from "./useOptionSetBuilder";
@@ -82,7 +81,7 @@ async function reloadDraft(draft: OptionSetDraft, metadataService: DataverseMeta
         };
     }
     const reloaded = await metadataService.getLocalChoiceOptions(draft.entityLogicalName, draft.attributeLogicalName, draft.displayName);
-    return { ...draft, rows: optionsToRows(reloaded.options), operation: "update" };
+    return { ...draft, rows: optionsToRows(reloaded.options), relatedOptions: reloaded.relatedOptions, operation: "update" };
 }
 
 function describeFailures(draft: OptionSetDraft, failedRows: OperationResultRow[]): string {
@@ -129,8 +128,7 @@ export function useSaveLoad(
     callbacksRef.current = callbacks;
 
     const hasBlockingErrors = issues.some((issue) => issue.severity === "error");
-    const isReadOnlyColumn = draft.scope === "local" && isReadOnlyAttributeType(draft.attributeType);
-    const isSaveable = draft.scope === "global" || (draft.scope === "local" && draft.operation === "update" && !!draft.entityLogicalName && !!draft.attributeLogicalName && !isReadOnlyColumn);
+    const isSaveable = draft.scope === "global" || (draft.scope === "local" && draft.operation === "update" && !!draft.entityLogicalName && !!draft.attributeLogicalName && !draft.globalOptionSetName);
     const canSave = !hasBlockingErrors && draft.rows.length > 0 && !!connection && isSaveable;
 
     const notify = useCallback((title: string, body: string, type: "success" | "error", duration: number) => {
@@ -262,8 +260,11 @@ export function useSaveLoad(
                     optionSetSchemaName: detail.Name,
                     displayName: detail.DisplayName,
                     description: extractDescription(detail.Description),
+                    entityLogicalName: "",
+                    attributeLogicalName: "",
                     globalOptionSetName: undefined,
                     attributeType: undefined,
+                    relatedOptions: undefined,
                     rows,
                     operation: "update",
                 });
@@ -299,7 +300,9 @@ export function useSaveLoad(
 
             try {
                 const rows = optionsToRows(detail.options);
-                const boundGlobalName = detail.isGlobal ? detail.optionSetName : undefined;
+                const isStateOrStatus = detail.attributeType === "State" || detail.attributeType === "Status";
+                // The State and Status actions address the column on its table, never a global option set
+                const boundGlobalName = detail.isGlobal && !isStateOrStatus ? detail.optionSetName : undefined;
 
                 // Single atomic update — preserves publisherPrefix / solutionUniqueName.
                 actions.applyDraft({
@@ -309,6 +312,7 @@ export function useSaveLoad(
                     attributeLogicalName: detail.attributeLogicalName,
                     globalOptionSetName: boundGlobalName,
                     attributeType: detail.attributeType,
+                    relatedOptions: detail.relatedOptions,
                     optionSetSchemaName: detail.attributeLogicalName,
                     displayName: detail.attributeDisplayName,
                     description: "",
@@ -316,13 +320,11 @@ export function useSaveLoad(
                     operation: "update",
                 });
 
-                const successMessage = isReadOnlyAttributeType(detail.attributeType)
-                    ? `Loaded "${detail.attributeDisplayName}" with ${rows.length} options. ${detail.attributeType} columns are read-only in this tool for now, so you can view and export them but not save.`
-                    : boundGlobalName
-                      ? `Loaded "${detail.attributeDisplayName}" with ${rows.length} options. This column uses the global choice "${boundGlobalName}", so changes apply everywhere it is used.`
-                      : `Loaded "${detail.attributeDisplayName}" with ${rows.length} options`;
+                const successMessage = boundGlobalName
+                    ? `Loaded "${detail.attributeDisplayName}" with ${rows.length} options. This column uses the global choice "${boundGlobalName}", so it can only be edited on the Global tab.`
+                    : `Loaded "${detail.attributeDisplayName}" with ${rows.length} options`;
                 setState((prev) => ({ ...prev, status: "success", error: null, successMessage: null, loadedOptionSetName: detail.attributeLogicalName }));
-                notify("Loaded", successMessage, "success", boundGlobalName || isReadOnlyAttributeType(detail.attributeType) ? 6000 : 3000);
+                notify("Loaded", successMessage, "success", boundGlobalName ? 6000 : 3000);
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : "Failed to load local choice options";
                 console.error("[SaveLoad] Local choice load failed:", error);
@@ -339,8 +341,8 @@ export function useSaveLoad(
     const saveTooltip = !connection
         ? "No Dataverse connection"
         : !isSaveable
-          ? isReadOnlyColumn
-              ? `${draft.attributeType} columns are read-only in this tool for now`
+          ? draft.globalOptionSetName
+              ? "This column uses a global choice. Edit it on the Global tab."
               : draft.scope === "local"
                 ? "Load a local choice column first before publishing changes"
                 : "Cannot publish this option set type"

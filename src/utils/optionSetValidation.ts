@@ -3,6 +3,7 @@ import {
   MAX_OPTION_VALUE,
   MIN_OPTION_VALUE,
 } from "../constants";
+import { isStateColumn, isStatusColumn } from "../models/optionSetModels";
 import type {
   OptionDraftRow,
   OptionSetDraft,
@@ -36,7 +37,11 @@ const MAX_DISPLAY_NAME_LENGTH = 100;
 export function validateOptionSetDraft(
   draft: OptionSetDraft,
   availableLanguageCodes?: number[],
-  options?: { validateBlankTranslationRows?: boolean },
+  options?: {
+    validateBlankTranslationRows?: boolean;
+    /** Option values that exist in Dataverse, in Dataverse order */
+    loadedOptionValues?: ReadonlySet<number>;
+  },
 ): ValidationIssue[] {
   const validateBlanks = options?.validateBlankTranslationRows ?? true;
   const issues: ValidationIssue[] = [];
@@ -95,17 +100,15 @@ export function validateOptionSetDraft(
     }
   }
 
-  if (!draft.solutionUniqueName.trim()) {
-    // Solution is required to CREATE a new global option set (for ALM/transport).
-    // Updating or upserting an existing one doesn't need it — the set is already assigned.
-    const solutionSeverity =
-      draft.scope === "global" && draft.operation === "create" ? "error" : "warning";
+  // SolutionUniqueName is optional on every Dataverse call: a new global option set always lands in the Default
+  // Solution, and naming a solution adds it there too. UpdateStateValue takes no solution at all.
+  if (!draft.solutionUniqueName.trim() && !isStateColumn(draft)) {
     issues.push({
       code: "MISSING_SOLUTION",
-      severity: solutionSeverity,
+      severity: "warning",
       message:
-        solutionSeverity === "error"
-          ? "Solution is required when creating a new global option set."
+        draft.scope === "global" && draft.operation === "create"
+          ? "No solution selected. The new option set will only be in the Default Solution."
           : "Solution unique name is recommended for predictable solution layering.",
       fieldPath: "solutionUniqueName",
     });
@@ -140,11 +143,46 @@ export function validateOptionSetDraft(
     });
   }
 
+  if (isStateColumn(draft) && draft.operation === "update" && options?.loadedOptionValues) {
+    const loaded = [...options.loadedOptionValues];
+    if (draft.rows.length !== loaded.length || draft.rows.some((row, index) => row.optionValue !== loaded[index])) {
+      issues.push({
+        code: "STATE_VALUES_FIXED",
+        severity: "error",
+        message: "Status values are fixed in Dataverse: they can't be added, removed, reordered or renumbered.",
+        fieldPath: "rows",
+      });
+    }
+  }
+
+  if (isStatusColumn(draft)) {
+    for (const state of draft.relatedOptions ?? []) {
+      if (!draft.rows.some((row) => row.stateCode === state.value)) {
+        issues.push({
+          code: "STATE_WITHOUT_REASON",
+          severity: "error",
+          message: `Status "${state.label}" must keep at least one status reason.`,
+          fieldPath: "rows",
+        });
+      }
+    }
+  }
+
   const usedValues = new Set<number>();
   const usedExternalKeys = new Set<string>();
 
   draft.rows.forEach((row, index) => {
     const rowId = row.rowId;
+
+    if (isStatusColumn(draft) && row.stateCode === undefined) {
+      issues.push({
+        code: "MISSING_STATE_CODE",
+        severity: "error",
+        message: "Choose the Status this status reason belongs to.",
+        rowId,
+        fieldPath: `rows.${index}.stateCode`,
+      });
+    }
 
     if (row.optionValue !== undefined) {
       if (!isOptionValue(row.optionValue)) {

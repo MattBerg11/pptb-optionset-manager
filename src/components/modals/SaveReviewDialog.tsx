@@ -123,7 +123,7 @@ export function SaveReviewDialog({ open, draft, changeSet, connection, onRevertR
           ]
               .filter(Boolean)
               .join(" · ")}`
-        : `A new global option set ${describeTarget(draft)} will be created${draft.solutionUniqueName ? ` in solution "${draft.solutionUniqueName}"` : ""} with ${changeSet.added} option${changeSet.added === 1 ? "" : "s"}.`;
+        : `A new global option set ${describeTarget(draft)} will be created${draft.solutionUniqueName ? ` in solution "${draft.solutionUniqueName}"` : " in the Default Solution only"} with ${changeSet.added} option${changeSet.added === 1 ? "" : "s"}.`;
 
     const revert = (change: RowChange): void => {
         if (change.kind === "removed" && change.optionValue !== undefined) onRestoreRow(change.optionValue);

@@ -6,7 +6,7 @@
  */
 
 import type DataverseAPI from "@pptb/types/dataverseAPI";
-import type { ChoiceAttributeType, GlobalOptionSetDetail, GlobalOptionSetSummary, LocalChoiceDetail, OptionMetadata } from "../models/optionSetModels";
+import type { ChoiceAttributeType, GlobalOptionSetDetail, GlobalOptionSetSummary, LocalChoiceDetail, OptionMetadata, RelatedOption } from "../models/optionSetModels";
 
 const DEBUG = typeof window !== "undefined" && (window as unknown as Record<string, unknown>)["__PPTB_DEBUG__"] === true;
 
@@ -250,7 +250,8 @@ export class DataverseMetadataService {
     }
 
     /**
-     * Get solutions, optionally filtered by publisher
+     * Get unmanaged solutions, optionally filtered by publisher. Only these are listed because every option set
+     * write that names a solution adds to it, and SolutionUniqueName must be an unmanaged solution.
      */
     async getSolutions(publisherId?: string): Promise<Solution[]> {
         const cacheKey = publisherId ? `solutions:${publisherId}` : "solutions:all";
@@ -275,6 +276,7 @@ export class DataverseMetadataService {
                         <attribute name="ismanaged" />
                         <filter>
                             <condition attribute="isvisible" operator="eq" value="true" />
+                            <condition attribute="ismanaged" operator="eq" value="false" />
                             ${publisherFilter}
                         </filter>
                         <order attribute="friendlyname" />
@@ -439,8 +441,12 @@ export class DataverseMetadataService {
                 ["LogicalName", "SchemaName", "DisplayName", "AttributeType", "AttributeTypeName"]
             );
 
+            // AttributeType reports a multi-select column as Virtual; AttributeTypeName holds its real type
+            const attributeTypeOf = (attribute: Record<string, unknown>): string =>
+                (attribute["AttributeTypeName"] as { Value?: string } | undefined)?.Value === "MultiSelectPicklistType" ? "MultiSelectPicklist" : (attribute["AttributeType"] as string);
+
             const attributes: ChoiceAttribute[] = (result as { value: Record<string, unknown>[] }).value
-                .filter((a) => choiceTypes.has(a["AttributeType"] as string))
+                .filter((a) => choiceTypes.has(attributeTypeOf(a)))
                 .map((entity) => {
                     const displayName =
                         (entity["DisplayName"] as { UserLocalizedLabel?: { Label: string } } | undefined)?.UserLocalizedLabel?.Label ??
@@ -450,7 +456,7 @@ export class DataverseMetadataService {
                         schemaName: entity["SchemaName"] as string,
                         displayName,
                         entityLogicalName,
-                        attributeType: entity["AttributeType"] as ChoiceAttribute["attributeType"],
+                        attributeType: attributeTypeOf(entity) as ChoiceAttribute["attributeType"],
                         isGlobal: false,
                     };
                 })
@@ -572,6 +578,23 @@ export class DataverseMetadataService {
             }
         }
 
+        // The path above can come back empty for a column that uses a global choice, so read it by expanding both
+        // properties, which Dataverse documents as returning the options for either kind of column.
+        if (rawOptions.length === 0) {
+            for (const typePath of typePaths.slice(0, 2)) {
+                const optionSet = await this.expandColumnOptionSet(entityLogicalName, attributeLogicalName, typePath);
+                if (!optionSet) continue;
+                rawOptions = (optionSet["Options"] ?? []) as Array<Record<string, unknown>>;
+                optionSetIsGlobal = optionSet["IsGlobal"] as boolean | undefined;
+                optionSetName = optionSet["Name"] as string | undefined;
+                attributeType = typePath.replace("Microsoft.Dynamics.CRM.", "").replace("AttributeMetadata", "") as ChoiceAttributeType;
+                break;
+            }
+            if (rawOptions.length === 0 && optionSetIsGlobal && optionSetName) {
+                rawOptions = (await this.getGlobalOptionSetDetail(optionSetName)).Options as unknown as Array<Record<string, unknown>>;
+            }
+        }
+
         const options: OptionMetadata[] = rawOptions.map((o) => ({
             Value: o["Value"] as number,
             Label: o["Label"] as OptionMetadata["Label"],
@@ -579,10 +602,51 @@ export class DataverseMetadataService {
             Color: o["Color"] as string | undefined,
             IsHidden: o["IsHidden"] as boolean | undefined,
             ExternalValue: o["ExternalValue"] as string | undefined,
+            State: o["State"] as number | undefined,
+            DefaultStatus: o["DefaultStatus"] as number | undefined,
         }));
 
+        const relatedOptions = attributeType === "State" || attributeType === "Status" ? await this.getPairedOptions(entityLogicalName, attributeType) : undefined;
+
         if (DEBUG) console.log(`[OptionSetManager] Loaded ${options.length} options for ${entityLogicalName}.${attributeLogicalName}`);
-        return { entityLogicalName, attributeLogicalName, attributeDisplayName, options, isGlobal: optionSetIsGlobal, optionSetName, attributeType };
+        return { entityLogicalName, attributeLogicalName, attributeDisplayName, options, isGlobal: optionSetIsGlobal, optionSetName, attributeType, relatedOptions };
+    }
+
+    /**
+     * Reads a column's option set through $expand. Undefined when the cast doesn't match the column.
+     */
+    private async expandColumnOptionSet(entityLogicalName: string, attributeLogicalName: string, typePath: string): Promise<Record<string, unknown> | undefined> {
+        const column = `EntityDefinitions(LogicalName='${entityLogicalName.replace(/'/g, "''")}')/Attributes(LogicalName='${attributeLogicalName.replace(/'/g, "''")}')/${typePath}`;
+        try {
+            const attribute = (await this.dataverseAPI.queryData(`${column}?$select=LogicalName&$expand=OptionSet,GlobalOptionSet`)) as unknown as Record<string, unknown>;
+            return (attribute["GlobalOptionSet"] ?? attribute["OptionSet"]) as Record<string, unknown> | undefined;
+        } catch {
+            return undefined;
+        }
+    }
+
+    /**
+     * Options of the column paired with a State or Status column. Empty if they can't be read: the loaded column
+     * still opens, and validation stops a new status reason from being saved without a Status.
+     */
+    private async getPairedOptions(entityLogicalName: string, attributeType: "State" | "Status"): Promise<RelatedOption[]> {
+        const path =
+            attributeType === "Status"
+                ? "Attributes(LogicalName='statecode')/Microsoft.Dynamics.CRM.StateAttributeMetadata/OptionSet"
+                : "Attributes(LogicalName='statuscode')/Microsoft.Dynamics.CRM.StatusAttributeMetadata/OptionSet";
+        try {
+            const optionSet = (await this.dataverseAPI.getEntityRelatedMetadata(entityLogicalName, path as `Attributes(${string})/${string}`)) as Record<string, unknown>;
+            return ((optionSet["Options"] ?? []) as Array<Record<string, unknown>>).map((option) => {
+                const label = option["Label"] as { UserLocalizedLabel?: { Label: string } | null; LocalizedLabels?: Array<{ Label: string }> } | undefined;
+                return {
+                    value: option["Value"] as number,
+                    label: label?.UserLocalizedLabel?.Label ?? label?.LocalizedLabels?.[0]?.Label ?? String(option["Value"]),
+                    stateCode: option["State"] as number | undefined,
+                };
+            });
+        } catch {
+            return [];
+        }
     }
 
     /**

@@ -1,8 +1,8 @@
-import { Button, Input, Tooltip, mergeClasses } from "@fluentui/react-components";
+import { Button, Dropdown, Input, Option, Tooltip, mergeClasses } from "@fluentui/react-components";
 import { ChevronDownRegular, ChevronRightRegular, DeleteRegular, ReOrderDotsVerticalRegular } from "@fluentui/react-icons";
 import { memo, useRef } from "react";
 import { MAX_OPTION_VALUE, MIN_OPTION_VALUE } from "../../../constants";
-import type { OptionDraftRow } from "../../../models/optionSetModels";
+import type { OptionDraftRow, RelatedOption } from "../../../models/optionSetModels";
 import { OptionMetadataPopover } from "./OptionMetadataPopover";
 
 interface OptionRowMainProps {
@@ -28,6 +28,10 @@ interface OptionRowMainProps {
     reorderingEnabled?: boolean;
     /** Value that will be assigned on save when the row has none; shown as the placeholder */
     autoValue?: number;
+    statusKind?: "state" | "status";
+    relatedOptions?: readonly RelatedOption[];
+    isNewRow?: boolean;
+    readOnly?: boolean;
 }
 
 export const OptionRowMain = memo(function OptionRowMain({
@@ -52,10 +56,20 @@ export const OptionRowMain = memo(function OptionRowMain({
     isDirty,
     reorderingEnabled,
     autoValue,
+    statusKind,
+    relatedOptions = [],
+    isNewRow,
+    readOnly,
 }: OptionRowMainProps): JSX.Element {
     const defaultLabel = row.labels.find((entry) => entry.languageCode === defaultLanguageCode) ?? row.labels[0];
     const colorInputRef = useRef<HTMLInputElement>(null);
-    const showDelete = rowCount > 1;
+    const fixedOption = statusKind === "state";
+    const showDelete = rowCount > 1 && !fixedOption && !readOnly;
+    // InsertStatusValue and UpdateStateValue take no external value or hidden flag
+    const showMetadata = !hideAdvancedProperties && !statusKind && !readOnly;
+    const relatedChoices = fixedOption ? relatedOptions.filter((option) => option.stateCode === row.optionValue) : relatedOptions;
+    const relatedValue = fixedOption ? row.defaultStatusCode : row.stateCode;
+    const relatedText = relatedOptions.find((option) => option.value === relatedValue)?.label ?? relatedValue?.toString() ?? "";
 
     return (
         <tr
@@ -123,26 +137,31 @@ export const OptionRowMain = memo(function OptionRowMain({
             )}
             {/* Color cell */}
             <td className={mergeClasses(styles.td, styles.colorCell)}>
-                <button
-                    className={styles.colorSwatch}
-                    style={{ backgroundColor: row.color ?? undefined }}
-                    onClick={() => colorInputRef.current?.click()}
-                    title={row.color ? `Row color: ${row.color}. Click to change` : "Set row color"}
-                    aria-label={row.color ? `Row color: ${row.color}. Click to change` : "Set row color"}
-                    type="button"
-                />
-                <input
-                    ref={colorInputRef}
-                    type="color"
-                    value={row.color ?? ""}
-                    onChange={(event) => {
-                        const color = (event.target as HTMLInputElement).value;
-                        onUpdateRow(row.rowId, (current) => ({ ...current, color }));
-                    }}
-                    className={styles.colorInput}
-                    aria-hidden="true"
-                    tabIndex={-1}
-                />
+                {!fixedOption && (
+                    <>
+                        <button
+                            className={styles.colorSwatch}
+                            style={{ backgroundColor: row.color ?? undefined }}
+                            onClick={() => colorInputRef.current?.click()}
+                            title={readOnly ? (row.color ?? "No color") : row.color ? `Row color: ${row.color}. Click to change` : "Set row color"}
+                            aria-label={readOnly ? `Row color: ${row.color ?? "none"}` : row.color ? `Row color: ${row.color}. Click to change` : "Set row color"}
+                            type="button"
+                            disabled={readOnly}
+                        />
+                        <input
+                            ref={colorInputRef}
+                            type="color"
+                            value={row.color ?? ""}
+                            onChange={(event) => {
+                                const color = (event.target as HTMLInputElement).value;
+                                onUpdateRow(row.rowId, (current) => ({ ...current, color }));
+                            }}
+                            className={styles.colorInput}
+                            aria-hidden="true"
+                            tabIndex={-1}
+                        />
+                    </>
+                )}
             </td>
             {/* label cell */}
             <td className={mergeClasses(styles.td, styles.labelColumn)}>
@@ -153,6 +172,7 @@ export const OptionRowMain = memo(function OptionRowMain({
                     className={styles.inputFlex}
                     style={{ width: "100%" }}
                     aria-label="Label"
+                    readOnly={readOnly}
                     onChange={(event) => {
                         onUpdateRow(row.rowId, (current) => {
                             const labels = [...current.labels];
@@ -190,6 +210,7 @@ export const OptionRowMain = memo(function OptionRowMain({
                     className={mergeClasses(styles.inputFlex, styles.numberInput)}
                     style={{ width: "100%" }}
                     aria-label="Numeric value"
+                    readOnly={fixedOption || readOnly}
                     onChange={(event) => {
                         const value = (event.target as HTMLInputElement).value;
                         const parsed = value ? Number(value) : undefined;
@@ -200,6 +221,30 @@ export const OptionRowMain = memo(function OptionRowMain({
                     }}
                 />
             </td>
+            {/* Status of a status reason, or default status reason of a Status */}
+            {statusKind && (
+                <td className={styles.td}>
+                    <Dropdown
+                        size="small"
+                        className={styles.relatedDropdown}
+                        aria-label={fixedOption ? "Default status reason" : "Status"}
+                        placeholder={fixedOption ? "Default status reason" : "Status"}
+                        value={relatedText}
+                        selectedOptions={relatedValue !== undefined ? [String(relatedValue)] : []}
+                        disabled={!fixedOption && !isNewRow}
+                        onOptionSelect={(_, data) => {
+                            const selected = Number(data.optionValue);
+                            onUpdateRow(row.rowId, (current) => (fixedOption ? { ...current, defaultStatusCode: selected } : { ...current, stateCode: selected }));
+                        }}
+                    >
+                        {relatedChoices.map((option) => (
+                            <Option key={option.value} value={String(option.value)} text={option.label}>
+                                {option.label}
+                            </Option>
+                        ))}
+                    </Dropdown>
+                </td>
+            )}
             {/* description column */}
             <td className={mergeClasses(styles.td, styles.descriptionColumn)}>
                 <Input
@@ -209,6 +254,7 @@ export const OptionRowMain = memo(function OptionRowMain({
                     className={styles.inputFlex}
                     style={{ width: "100%" }}
                     aria-label="Description"
+                    readOnly={readOnly}
                     onChange={(event) => {
                         onUpdateRow(row.rowId, (current) => {
                             const labels = [...current.labels];
@@ -235,7 +281,7 @@ export const OptionRowMain = memo(function OptionRowMain({
             </td>
             <td className={mergeClasses(styles.td, showDelete ? styles.actionCell : styles.actionCellSingle)}>
                 <div className={styles.actionButtons}>
-                    {!hideAdvancedProperties && (
+                    {showMetadata && (
                         <OptionMetadataPopover
                             styles={styles}
                             externalKey={row.externalKey}

@@ -9,6 +9,8 @@ export function optionsToRows(options: readonly OptionMetadata[]): OptionDraftRo
         externalKey: option.ExternalValue ?? "",
         color: option.Color ?? undefined,
         hidden: option.IsHidden,
+        stateCode: option.State,
+        defaultStatusCode: option.DefaultStatus,
         labels: (option.Label?.LocalizedLabels ?? []).map((localized) => ({
             languageCode: localized.LanguageCode,
             label: localized.Label,

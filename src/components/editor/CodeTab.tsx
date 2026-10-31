@@ -8,6 +8,7 @@ import { oneDark } from "@codemirror/theme-one-dark";
 import { drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter, highlightSpecialChars, keymap, lineNumbers } from "@codemirror/view";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useToolboxEvents } from "../../hooks/useToolboxAPI";
+import { isGlobalChoiceColumn } from "../../models/optionSetModels";
 import type { OptionSetDraft } from "../../models/optionSetModels";
 import { serializeDraftToCsv } from "../../services/codeGenerationService";
 
@@ -265,7 +266,7 @@ export function CodeTabActions({ codeText, draft, outputFormat, schemaName, onAp
 
     return (
         <div className={styles.actions}>
-            {outputFormat === "json" && (
+            {outputFormat === "json" && !isGlobalChoiceColumn(draft) && (
                 <Button appearance="primary" size="small" icon={<ArrowSyncRegular />} onClick={onApplyCode}>
                     Apply to Builder
                 </Button>
@@ -324,8 +325,10 @@ export function CodeTab({ codeText, codeError, onCodeChange, draft, outputFormat
 
     const displayedCode = useMemo(() => getDisplayedCode(outputFormat, draft, codeText), [outputFormat, draft, codeText]);
 
-    const isEditableMode = outputFormat === "json";
-    const { label: formatLabel, hint: formatHint } = FORMATS[outputFormat];
+    const usesGlobalChoice = isGlobalChoiceColumn(draft);
+    const isEditableMode = outputFormat === "json" && !usesGlobalChoice;
+    const { label: formatLabel } = FORMATS[outputFormat];
+    const formatHint = usesGlobalChoice ? "Read-only. This column uses a global choice." : FORMATS[outputFormat].hint;
     const lineCount = displayedCode.length > 0 ? displayedCode.split(/\r?\n/).length : 0;
     const charCount = displayedCode.length;
     const editorAriaLabel = `Code editor, ${formatLabel}${isEditableMode ? "" : ", read-only"}`;

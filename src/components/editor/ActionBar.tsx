@@ -2,7 +2,7 @@ import { Button, Tooltip, makeStyles, tokens } from "@fluentui/react-components"
 import { ArrowSyncRegular } from "@fluentui/react-icons";
 
 interface ActionBarProps {
-    actionButtons: Array<{ key: string; element: JSX.Element }>;
+    actionButtons: Array<{ key: string; element: JSX.Element; alignEnd?: boolean }>;
     onRefreshMetadata?: () => void;
 }
 
@@ -16,9 +16,9 @@ const useStyles = makeStyles({
     actionBarInner: {
         display: "flex",
         flexWrap: "wrap",
+        justifyContent: "space-between",
         gap: tokens.spacingHorizontalM,
         width: "100%",
-        maxWidth: "960px",
     },
     actionButtons: {
         display: "flex",
@@ -39,9 +39,18 @@ export function ActionBar({ actionButtons, onRefreshMetadata }: ActionBarProps):
                             <Button size="small" appearance="subtle" icon={<ArrowSyncRegular />} onClick={onRefreshMetadata} aria-label="Refresh metadata" />
                         </Tooltip>
                     )}
-                    {actionButtons.map(({ key, element }) => (
-                        <span key={key}>{element}</span>
-                    ))}
+                    {actionButtons
+                        .filter((button) => !button.alignEnd)
+                        .map(({ key, element }) => (
+                            <span key={key}>{element}</span>
+                        ))}
+                </div>
+                <div className={styles.actionButtons}>
+                    {actionButtons
+                        .filter((button) => button.alignEnd)
+                        .map(({ key, element }) => (
+                            <span key={key}>{element}</span>
+                        ))}
                 </div>
             </div>
         </div>

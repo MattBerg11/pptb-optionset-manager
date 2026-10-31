@@ -9,6 +9,7 @@ import { CodeTab, CodeTabActions, type CodeFormat } from "../components/editor/C
 import { ConflictDialog, ImportModal, SaveProgressDialog, SaveReviewDialog } from "../components/modals";
 import { SettingsPanel } from "../components/sidebars";
 import { SidebarPanel } from "../components/sidebars";
+import { isGlobalChoiceColumn } from "../models/optionSetModels";
 import { orderOptionSet } from "../services/dataverseOptionSetService";
 import { useOptionSetBuilder } from "../hooks/useOptionSetBuilder";
 import { usePageOrchestration } from "../hooks/usePageOrchestration";
@@ -328,9 +329,9 @@ export function App(): JSX.Element {
             const url = state.draft.scope === "local" ? tableUrl(environmentId, await metadataService.getEntityMetadataId(state.draft.entityLogicalName)) : solutionOptionSetsUrl(environmentId, state.metadataSelection.solutionId);
             await window.toolboxAPI.utils.openInConnectionBrowser(url);
         } catch (err) {
-            const msg = err instanceof Error ? err.message : "Failed to open Power Apps.";
+            const msg = err instanceof Error ? err.message : "Failed to open the browser.";
             window.toolboxAPI?.utils?.showNotification?.({
-                title: "Open in Power Apps failed",
+                title: "Open in Browser failed",
                 body: msg,
                 type: "error",
                 duration: 5000,
@@ -339,7 +340,7 @@ export function App(): JSX.Element {
     }, [metadataService, state.draft.scope, state.draft.entityLogicalName, state.metadataSelection.solutionId]);
 
     const actionButtons = useMemo(() => {
-        const buttons: Array<{ key: string; element: JSX.Element }> = [];
+        const buttons: Array<{ key: string; element: JSX.Element; alignEnd?: boolean }> = [];
 
         // Validate and Save act on the Builder; the Code tab only offers its own actions
         if (activeTab === "code") {
@@ -352,7 +353,7 @@ export function App(): JSX.Element {
             return buttons;
         }
 
-        if (activeTab === "builder") {
+        if (activeTab === "builder" && !isGlobalChoiceColumn(state.draft)) {
             buttons.push({
                 key: "import",
                 element: (
@@ -366,10 +367,11 @@ export function App(): JSX.Element {
         if (state.draft.operation === "update") {
             buttons.push({
                 key: "open-in-power-apps",
+                alignEnd: true,
                 element: (
-                    <Tooltip key="open-in-power-apps" content={state.draft.scope === "local" ? "Open this table in Power Apps" : "Open the option sets in this solution in Power Apps"} relationship="description">
+                    <Tooltip key="open-in-power-apps" content="Open in the browser" relationship="description">
                         <Button size="small" icon={<OpenRegular />} onClick={() => void handleOpenInPowerApps()}>
-                            Open in Power Apps
+                            Open in Browser
                         </Button>
                     </Tooltip>
                 ),
@@ -378,6 +380,7 @@ export function App(): JSX.Element {
 
         buttons.push({
             key: "validate",
+            alignEnd: true,
             element: (
                 <Button key="validate" size="small" onClick={handleValidate}>
                     Validate
@@ -387,6 +390,7 @@ export function App(): JSX.Element {
 
         buttons.push({
             key: "save",
+            alignEnd: true,
             element: (
                 <Tooltip key="save" content={!saveLoadHook.computed.canSave ? saveLoadHook.computed.saveTooltip : nothingToSave ? "No changes to publish" : !hasValidated ? "Validate before publishing" : saveLoadHook.computed.saveTooltip} relationship="description">
                     {/* disabledFocusable keeps hover and focus, so the tooltip can say why the button is off */}
@@ -431,6 +435,31 @@ export function App(): JSX.Element {
         // eslint-disable-next-line react-hooks/exhaustive-deps
         [saveLoadHook.handlers]
     );
+
+    const handleEditGlobalChoice = useCallback(async () => {
+        const name = state.draft.globalOptionSetName;
+        if (!name) return;
+        try {
+            const detail = await metadataService.getGlobalOptionSetDetail(name);
+            actions.updateMetadataSelection({
+                entityLogicalName: null,
+                entityDisplayName: null,
+                attributeLogicalName: null,
+                attributeDisplayName: null,
+                attributeSchemaName: null,
+                selectedGlobalOptionSetName: name,
+            });
+            saveLoadHook.handlers.handleLoadConfirm(detail);
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : "Failed to load the global choice.";
+            window.toolboxAPI?.utils?.showNotification?.({
+                title: "Open global choice failed",
+                body: msg,
+                type: "error",
+                duration: 5000,
+            });
+        }
+    }, [actions, metadataService, saveLoadHook.handlers, state.draft.globalOptionSetName]);
 
     const handleApplyOrder = useCallback(async () => {
         try {
@@ -580,6 +609,7 @@ export function App(): JSX.Element {
                                         changeSet={state.changeSet}
                                         onRestoreRow={actions.restoreRow}
                                         reorderingAlwaysOn={settings.reorderingAlwaysOn}
+                                        onEditGlobalChoice={() => void handleEditGlobalChoice()}
                                     />
                                 ) : (
                                     <CodeTab

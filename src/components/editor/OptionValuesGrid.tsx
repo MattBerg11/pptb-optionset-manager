@@ -1,7 +1,7 @@
 import { Button, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { ChevronDownRegular, ChevronRightRegular } from "@fluentui/react-icons";
 import { Fragment, useCallback, useMemo, useRef, useState } from "react";
-import type { OptionDraftRow, ValidationIssue } from "../../models/optionSetModels";
+import type { OptionDraftRow, RelatedOption, ValidationIssue } from "../../models/optionSetModels";
 import { LanguagePickerRow, LanguageSubRow, OptionRowMain } from "../editor/grid";
 import { useRowDragDrop } from "../../hooks/useRowDragDrop";
 import { useRowExpansion } from "../../hooks/useRowExpansion";
@@ -156,6 +156,10 @@ const useStyles = makeStyles({
         color: tokens.colorNeutralForeground2,
         fontSize: tokens.fontSizeBase200,
     },
+    relatedDropdown: {
+        width: "100%",
+        minWidth: 0,
+    },
     languageAddRow: {
         backgroundColor: tokens.colorNeutralBackground2,
     },
@@ -226,6 +230,9 @@ const useStyles = makeStyles({
         cursor: "pointer",
         flexShrink: 1,
         background: "transparent",
+        ":disabled": {
+            cursor: "default",
+        },
     },
     colorInput: {
         position: "absolute",
@@ -269,7 +276,16 @@ interface OptionValuesGridProps {
     dirtyRowIds?: ReadonlySet<string>;
     autoValues?: ReadonlyMap<string, number>;
     reorderingAlwaysOn?: boolean;
+    /** Set when a Status (state) or Status Reason (status) column is open: these allow fewer edits and add a column */
+    statusKind?: "state" | "status";
+    relatedOptions?: readonly RelatedOption[];
+    /** Rows not in Dataverse yet: a status reason's Status can only be chosen before it exists */
+    newRowIds?: ReadonlySet<string>;
+    /** View only: the options can be read and their languages expanded, but nothing can be changed */
+    readOnly?: boolean;
 }
+
+const NO_RELATED_OPTIONS: readonly RelatedOption[] = [];
 
 export function OptionValuesGrid({
     rows,
@@ -296,6 +312,10 @@ export function OptionValuesGrid({
     dirtyRowIds,
     autoValues,
     reorderingAlwaysOn,
+    statusKind,
+    relatedOptions = NO_RELATED_OPTIONS,
+    newRowIds,
+    readOnly,
 }: OptionValuesGridProps): JSX.Element {
     const styles = useStyles();
     const { expandedRows, toggleRowExpansion, toggleExpandAll, allExpanded } = useRowExpansion(rows, {
@@ -310,8 +330,18 @@ export function OptionValuesGrid({
     const { draggingIndex, dragOverIndex, setDraggingIndex, setDragOverIndex } = useRowDragDrop();
     const [applyOrderPending, setApplyOrderPending] = useState(false);
     const [reorderingToggled, setReorderingToggled] = useState(false);
-    const isReorderingEnabled = !!reorderingAlwaysOn || reorderingToggled;
+    const fixedOptions = statusKind === "state";
+    const canChangeRows = !fixedOptions && !readOnly;
+    const isReorderingEnabled = canChangeRows && (!!reorderingAlwaysOn || reorderingToggled);
     const tableWrapperRef = useRef<HTMLDivElement>(null);
+
+    // Intersection of user-selected languages and Dataverse-installed languages
+    const effectiveVisibleCodes = useMemo(
+        () => (availableLanguageCodes && availableLanguageCodes.length > 0 ? visibleLanguageCodes.filter((c) => availableLanguageCodes.includes(c)) : visibleLanguageCodes),
+        [availableLanguageCodes, visibleLanguageCodes]
+    );
+    const addableLanguageCodes = useMemo(() => (readOnly ? [] : effectiveVisibleCodes), [readOnly, effectiveVisibleCodes]);
+
     const { isVirtualized, visibleStart, visibleEnd, topSpacerH, bottomSpacerH, handleTableScroll } = useVirtualScroll({
         rows,
         expandedRows,
@@ -319,10 +349,8 @@ export function OptionValuesGrid({
         hasValidated,
         singleLanguageMode,
         defaultLanguageCode,
+        addableLanguageCodes,
     });
-
-    // Intersection of user-selected languages and Dataverse-installed languages
-    const effectiveVisibleCodes = availableLanguageCodes && availableLanguageCodes.length > 0 ? visibleLanguageCodes.filter((c) => availableLanguageCodes.includes(c)) : visibleLanguageCodes;
 
     const mainErrorRowIds = useMemo(() => {
         const ids = new Set<string>(apiErrorRowIds ?? []);
@@ -421,30 +449,32 @@ export function OptionValuesGrid({
         [onUpdateRow]
     );
 
-    const colCount = 5 + (isReorderingEnabled ? 1 : 0) + (singleLanguageMode ? 0 : 1);
+    const colCount = 5 + (isReorderingEnabled ? 1 : 0) + (singleLanguageMode ? 0 : 1) + (statusKind ? 1 : 0);
     const visibleRows = isVirtualized ? rows.slice(visibleStart, visibleEnd + 1) : rows;
 
     if (rows.length === 0) {
         return (
             <section className={styles.panel}>
-                <div className={styles.panelHeader}>
-                    {!reorderingAlwaysOn && (
-                        <Button
-                            appearance={reorderingToggled ? "primary" : "secondary"}
-                            size="small"
-                            onClick={() => setReorderingToggled((v) => !v)}
-                            title={reorderingToggled ? "Disable row reordering" : "Enable row reordering"}
-                            aria-pressed={reorderingToggled}
-                        >
-                            Reorder
+                {canChangeRows && (
+                    <div className={styles.panelHeader}>
+                        {!reorderingAlwaysOn && (
+                            <Button
+                                appearance={reorderingToggled ? "primary" : "secondary"}
+                                size="small"
+                                onClick={() => setReorderingToggled((v) => !v)}
+                                title={reorderingToggled ? "Disable row reordering" : "Enable row reordering"}
+                                aria-pressed={reorderingToggled}
+                            >
+                                Reorder
+                            </Button>
+                        )}
+                        <Button appearance="primary" size="small" onClick={onAddRow}>
+                            Add Row
                         </Button>
-                    )}
-                    <Button appearance="primary" size="small" onClick={onAddRow}>
-                        Add Row
-                    </Button>
-                </div>
+                    </div>
+                )}
                 <div className={styles.emptyState}>
-                    <span className={styles.emptyStateText}>No options yet. Click "Add Row" to add your first option.</span>
+                    <span className={styles.emptyStateText}>{canChangeRows ? 'No options yet. Click "Add Row" to add your first option.' : "This choice has no options."}</span>
                 </div>
             </section>
         );
@@ -453,16 +483,21 @@ export function OptionValuesGrid({
     return (
         <section className={styles.panel}>
             <div className={styles.panelHeader}>
-                {!reorderingAlwaysOn && (
+                {!reorderingAlwaysOn && canChangeRows && (
                     <Tooltip content={reorderingToggled ? "Disable row reordering" : "Enable drag-to-reorder and Alt+\u2191/\u2193 keyboard shortcut"} relationship="description">
                         <Button appearance={reorderingToggled ? "primary" : "secondary"} size="small" onClick={() => setReorderingToggled((v) => !v)} aria-pressed={reorderingToggled}>
                             Reorder
                         </Button>
                     </Tooltip>
                 )}
-                <Button appearance="primary" size="small" onClick={onAddRow}>
-                    Add Row
-                </Button>
+                {canChangeRows && (
+                    <Button appearance="primary" size="small" onClick={onAddRow}>
+                        Add Row
+                    </Button>
+                )}
+                {readOnly && <span className={styles.secondaryText}>Read-only</span>}
+                {fixedOptions && <span className={styles.secondaryText}>Dataverse fixes these Status values. You can change their labels, descriptions and default status reason.</span>}
+                {statusKind === "status" && <span className={styles.secondaryText}>A status reason stays in the Status it was created under.</span>}
                 {isLoaded && isReorderingEnabled && rows.length > 0 && onApplyOrder && (
                     <Tooltip content="Reorder options in Dataverse to match your current table order" relationship="description">
                         <Button
@@ -495,6 +530,7 @@ export function OptionValuesGrid({
                         <col style={{ width: 32 }} /> {/* Color column */}
                         <col style={{ width: "25%" }} /> {/* Label column */}
                         <col style={{ width: "15%" }} /> {/* Value column */}
+                        {statusKind && <col style={{ width: "18%" }} />} {/* Status or default status reason column */}
                         <col style={{ width: "auto" }} /> {/* Description column */}
                         <col style={{ width: 78 }} /> {/* Action column */}
                     </colgroup>
@@ -521,6 +557,11 @@ export function OptionValuesGrid({
                             <th className={mergeClasses(styles.th, styles.columnProps)} scope="col">
                                 Value
                             </th>
+                            {statusKind && (
+                                <th className={mergeClasses(styles.th, styles.columnProps)} scope="col">
+                                    {statusKind === "state" ? "Default status reason" : "Status"}
+                                </th>
+                            )}
                             <th className={mergeClasses(styles.th, styles.columnProps)} scope="col">
                                 Description
                             </th>
@@ -563,6 +604,10 @@ export function OptionValuesGrid({
                                         isDirty={dirtyRowIds?.has(row.rowId)}
                                         reorderingEnabled={isReorderingEnabled}
                                         autoValue={autoValues?.get(row.rowId)}
+                                        statusKind={statusKind}
+                                        relatedOptions={relatedOptions}
+                                        isNewRow={newRowIds?.has(row.rowId)}
+                                        readOnly={readOnly}
                                     />
 
                                     {hasValidated && validationIssues.filter((i) => i.rowId === row.rowId).length > 0 && (
@@ -598,11 +643,13 @@ export function OptionValuesGrid({
                                                     onUpdateLanguageDescription={handleUpdateLanguageDescription}
                                                     onRemoveLanguage={handleRemoveLanguage}
                                                     reorderingEnabled={isReorderingEnabled}
+                                                    hasStatusColumn={!!statusKind}
+                                                    readOnly={readOnly}
                                                 />
                                             );
                                         })}
 
-                                    {!singleLanguageMode && isExpanded && (
+                                    {!singleLanguageMode && isExpanded && !readOnly && (
                                         <LanguagePickerRow
                                             rowId={row.rowId}
                                             styles={styles}
@@ -611,6 +658,7 @@ export function OptionValuesGrid({
                                             onAddLanguage={handleAddLanguage}
                                             sortLanguagesByCode={sortLanguagesByCode}
                                             reorderingEnabled={isReorderingEnabled}
+                                            hasStatusColumn={!!statusKind}
                                         />
                                     )}
                                 </Fragment>

@@ -69,6 +69,8 @@ function describeDifferences(baseline: OptionDraftRow, current: OptionDraftRow, 
 
     if (!!baseline.hidden !== !!current.hidden) details.push(`Hidden: ${baseline.hidden ? "yes" : "no"} → ${current.hidden ? "yes" : "no"}`);
 
+    if (baseline.defaultStatusCode !== current.defaultStatusCode) details.push(`Default status reason value: ${baseline.defaultStatusCode ?? "none"} → ${current.defaultStatusCode ?? "none"}`);
+
     return details;
 }
 

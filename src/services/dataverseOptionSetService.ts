@@ -1,6 +1,6 @@
 import { DEFAULT_LANGUAGE_CODE } from "../constants.ts";
 import { OptionSetOperationError } from "../models/optionSetErrors";
-import { isReadOnlyAttributeType } from "../models/optionSetModels";
+import { isStateColumn, isStatusColumn } from "../models/optionSetModels";
 import type { OptionDraftRow, OptionSetDraft, OptionSetOperationResult, OptionSetProperties, SaveStepReporter } from "../models/optionSetModels";
 import { changedProperties } from "../utils/changeSet";
 import { assignOptionValues } from "../utils/optionValues";
@@ -237,6 +237,9 @@ export async function upsertOptionSet(
     const assignedValues = assignOptionValues(draft.rows, draft.optionValuePrefix, persisted);
     const target = targetParams(draft);
 
+    const isState = isStateColumn(draft);
+    const isStatus = isStatusColumn(draft);
+
     const operationRows: OptionSetOperationResult["rows"] = [];
     let created = 0;
     let updated = 0;
@@ -251,7 +254,8 @@ export async function upsertOptionSet(
         const requestedValue = row.optionValue ?? assignedValues.get(row.rowId);
         const isPersistedRow = row.optionValue !== undefined && persisted.has(row.optionValue);
         let finalValue = requestedValue;
-        const cleared = findClearedFields(row, isPersistedRow ? baselineRows.find((b) => b.optionValue === row.optionValue) : undefined);
+        const baselineRow = isPersistedRow ? baselineRows.find((b) => b.optionValue === row.optionValue) : undefined;
+        const cleared = findClearedFields(row, baselineRow);
 
         try {
             if (draft.operation === "update" && isPersistedRow && dirtyRowIds && !dirtyRowIds.has(row.rowId)) {
@@ -268,16 +272,31 @@ export async function upsertOptionSet(
             if (requestedValue !== undefined) params.Value = requestedValue;
             const description = buildDescription(row, draft.defaultLanguageCode, cleared.descriptionLanguages);
             if (description) params.Description = description;
-            if (row.externalKey) params.ExternalValue = row.externalKey;
-            else if (cleared.externalValue) params.ExternalValue = "";
-            if (row.hidden !== undefined) params.IsHidden = row.hidden;
-            if (row.color) params.Color = row.color;
-            else if (cleared.color) params.Color = "";
-            if (draft.solutionUniqueName) params.SolutionUniqueName = draft.solutionUniqueName;
+            // InsertStatusValue and UpdateStateValue don't take the same parameters as the option value actions
+            if (!isState && !isStatus) {
+                if (row.externalKey) params.ExternalValue = row.externalKey;
+                else if (cleared.externalValue) params.ExternalValue = "";
+                if (row.hidden !== undefined) params.IsHidden = row.hidden;
+            }
+            if (isState) {
+                if (row.defaultStatusCode !== baselineRow?.defaultStatusCode) params.DefaultStatusCode = row.defaultStatusCode;
+            } else {
+                if (row.color) params.Color = row.color;
+                else if (cleared.color) params.Color = "";
+                if (draft.solutionUniqueName) params.SolutionUniqueName = draft.solutionUniqueName;
+            }
 
             const rowName = rowLabelFor(row, draft.defaultLanguageCode) || (requestedValue !== undefined ? `value ${requestedValue}` : "new option");
+            const callInsert = (): Promise<Record<string, unknown>> =>
+                isStatus
+                    ? window.dataverseAPI.execute({ operationName: "InsertStatusValue", operationType: "action", parameters: { ...params, StateCode: row.stateCode } })
+                    : window.dataverseAPI.insertOptionValue(params);
+            const callUpdate = (mergeLabels: boolean): Promise<Record<string, unknown>> =>
+                isState
+                    ? window.dataverseAPI.execute({ operationName: "UpdateStateValue", operationType: "action", parameters: { ...params, MergeLabels: mergeLabels } })
+                    : window.dataverseAPI.updateOptionValue({ ...params, MergeLabels: mergeLabels });
             const insert = async (): Promise<void> => {
-                const response = await runStep(`Creating option "${rowName}"`, () => window.dataverseAPI.insertOptionValue(params), (r) => {
+                const response = await runStep(`Creating option "${rowName}"`, callInsert, (r) => {
                     const assigned = r?.["NewOptionValue"];
                     return typeof assigned === "number" ? `Value ${assigned}` : requestedValue !== undefined ? `Value ${requestedValue}` : undefined;
                 });
@@ -290,7 +309,7 @@ export async function upsertOptionSet(
             const update = async (message: string): Promise<void> => {
                 // MergeLabels keeps languages missing from Label/Description, so a removed translation needs a full replace.
                 // Label and Description are both sent in full, so replacing drops only what was cleared.
-                await runStep(`Updating option "${rowName}"`, () => window.dataverseAPI.updateOptionValue({ ...params, MergeLabels: cleared.labelLanguages.length === 0 }));
+                await runStep(`Updating option "${rowName}"`, () => callUpdate(cleared.labelLanguages.length === 0));
                 updated += 1;
                 operationRows.push({ rowId: row.rowId, optionValue: finalValue, status: "updated", message });
             };
@@ -366,8 +385,8 @@ export async function upsertOptionSet(
 }
 
 export async function orderOptionSet(draft: TargetDraft & Pick<OptionSetDraft, "rows">): Promise<void> {
-    if (draft.scope === "local" && isReadOnlyAttributeType(draft.attributeType)) {
-        throw new OptionSetOperationError(`${draft.attributeType} columns are read-only in this tool for now.`, "OrderOptionSet");
+    if (isStateColumn(draft)) {
+        throw new OptionSetOperationError("Status values can't be reordered in Dataverse.", "OrderOptionSet");
     }
     if (draft.rows.some((r) => r.optionValue === undefined || r.optionValue === null)) {
         throw new OptionSetOperationError("Cannot reorder: some options have no assigned value. Save the option set first to assign values.", "OrderOptionSet");

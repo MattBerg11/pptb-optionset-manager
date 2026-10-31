@@ -1,21 +1,19 @@
 # OptionSet Manager
 
-A [Power Platform ToolBox](https://powerplatformtoolbox.com) tool for creating and editing Dataverse choices (option sets), with multi-language labels, a review step before every save, and publishing scoped to just what you changed.
+A [Power Platform ToolBox](https://powerplatformtoolbox.com) tool for creating and editing Dataverse choices (option sets), with multi-language support, a review step before every save, and publishing scoped to just what you changed.
 
-![OptionSet Manager editing a global choice with English, German and French labels](https://raw.githubusercontent.com/mattberg11/pptb-optionset-manager/main/docs/images/optionset-manager.png)
+![OptionSet Manager Global, dark theme](https://raw.githubusercontent.com/mattberg11/pptb-optionset-manager/main/docs/images/optionset-manager.png)
 
-![OptionSet Manager editing a local Channel choice column on a Ticket table, light theme](https://raw.githubusercontent.com/mattberg11/pptb-optionset-manager/main/docs/images/optionset-manager-local.png)
+![OptionSet Manager Local, light theme](https://raw.githubusercontent.com/mattberg11/pptb-optionset-manager/main/docs/images/optionset-manager-local.png)
 
 ## Features
 
-- **Global choices**: create new ones in a solution, or load an existing one to edit its display name, description and options.
-- **Local choices**: edit the options of an existing choice or multi-select choice column on any table. State and Status columns open read-only.
-- **Multi-language labels and descriptions** for every option. Only the languages installed in your environment are offered.
-- **Option details**: value, color, external value and hidden flag. New values follow the publisher's option value prefix, and existing values can be changed.
+- **Global choices**: Create new ones in a solution, or load an existing one to edit.
+- **Local choices**: Edit the options of an existing choice or multi-select choice column on any table, including Status and Status Reason. A column that uses a global choice opens read-only, with a button to edit it on the Global tab.
+- **Multi-language support** Review and modify any configured localisation. Only the languages installed in your environment are offered.
+- **All the options**: The ability to set the value, color, external value, and hidden flag. New values follow the publisher's option value prefix, and existing values can be changed.
 - **Reorder** options by dragging or with Alt+Up/Down.
-- **Review before saving**: see every insert, update, delete and reorder before anything is sent, and revert any single change. Deleted options can be restored from the pending changes bar until you save.
-- **Saves only what changed**, then publishes only that choice (and its table for a local choice), so other unpublished customizations are left alone.
-- **Open in Power Apps**: jump from a loaded global choice to the option sets in its solution, or from a local choice to its table.
+- **Review before saving**: See every insert, update, delete, and reorder before anything is sent, with the chance to revert individual changes. Deleted options can be restored from the pending changes bar until you save.
 - **Import** options from CSV or JSON, and **export** the current choice from the Code tab as JSON (all languages) or CSV (default language).
 
 ## Requirements
@@ -27,8 +25,8 @@ A [Power Platform ToolBox](https://powerplatformtoolbox.com) tool for creating a
 ## Usage
 
 1. Choose **Global** or **Local** at the top of the sidebar.
-2. Pick a **Publisher** and **Solution**.
-3. For a global choice, pick one from **Global Option Set** to edit it, or click **New** to start one. For a local choice, pick the **Entity** and **Attribute**.
+2. Pick a **Publisher** and, optionally, a **Solution**.
+3. For a global choice, pick one from **Global Option Set** to edit it, or click **New** to start one. For a local choice, pick the **Table (ENtity)** and **Column (Attribute)**.
 4. Edit labels, values and descriptions, add or remove rows, and reorder them. Expand a row to edit its other languages.
 5. Click **Validate**, then **Review & Publish**. Review the changes and confirm.
 
@@ -36,23 +34,24 @@ Settings (the gear icon) control language sub-rows, validation of blank translat
 
 ## What this tool changes
 
-Nothing is written to Dataverse until you click **Review & Publish** and confirm. The confirmation names the connected environment.
+Nothing is written to Dataverse until you click **Review & Publish** and confirm.
 
-- **Global choices**: creates a new global choice in the selected solution and updates the display name and description of an existing one.
-- **Options** of a global choice or a local choice column: inserts new options; updates labels, descriptions, color, external value and the hidden flag; deletes options; and changes their order. A global choice is shared, so its changes apply to every column that uses it.
+- **Global choices**: creates a new global choice and updates the display name and description of an existing one.
+- **Options** of a global choice or a local choice column: inserts new options; updates labels, descriptions, color, external value and the hidden flag; deletes options; and changes their order. A global choice is shared, so its changes apply to everything that uses it.
+- **Status Reason columns**: adds status reasons under a chosen Status, and updates, deletes and reorders them. A status reason stays in the Status it was created under.
+- **Status columns**: Dataverse fixes these values for each table, so only their labels, descriptions and default status reason can change. Managed Status columns can't be changed.
 - **Changed option values**: the option is created with the new value and the old one is deleted. Records are not updated: records that stored the old value, or a deleted option's value, keep that number, which no longer has a label.
-- **Solutions**: new choices and options are added to the selected solution.
-- **Publishing**: after a save, only that choice is published. A local choice that doesn't use a global choice is published by publishing its table, which also publishes any other unpublished changes on that table.
+- **Solutions**: a solution is optional. Dataverse puts every new global choice in the Default Solution; with an unmanaged solution selected, the new choice and any choice or column you change are added to that solution too. Status changes are the exception, because the Dataverse action takes no solution.
+- **Publishing**: after a save, only that choice is published. A local choice is published by publishing its table, which also publishes any other unpublished changes on that table.
 - **Files**: export writes a file only where you choose to save it.
-- **Settings**: your preferences for this tool are stored in ToolBox.
 
 It doesn't change records, tables, forms, views or security, or any column other than the options of the one you load.
 
-**There is no undo.** Saved changes and deletes can't be reverted from this tool. If you need a backup, export the solution from Dataverse before saving.
+**There is no undo.** Published changes and deletes can't be reverted from this tool. If you need a backup, export the solution from Dataverse or copy the JSON payload from the Code tab.
 
 ## Data and privacy
 
-The tool talks only to your connected Dataverse environment, through the ToolBox APIs. It makes no other network calls, sends no telemetry and declares no CSP exceptions. **Open in Power Apps** opens make.powerapps.com in your browser. Debug logging is off unless you set `window.__PPTB_DEBUG__ = true` in the tool's DevTools, and it logs only metadata names and counts.
+The tool talks only to your connected Dataverse environment, through the ToolBox APIs. It makes no other network calls and declares no CSP exceptions. **Open in Browser** opens make.powerapps.com in your browser.
 
 ## Development
 
@@ -75,8 +74,8 @@ npm publish --access public
 
 ## AI Assistance
 
-Much of this tool's code was written with AI coding assistants (Claude Code by Anthropic and GitHub Copilot). Matt Berg reviewed it, tested it against a real Dataverse environment, and maintains it.
+Much of this tool's code was written with AI coding assistants (Claude Code and GitHub Copilot). I review a lot of it, and have tested functionality personally.
 
 ## License
 
-[MIT](LICENSE)
+[GNU General Public License v3.0](LICENSE).
