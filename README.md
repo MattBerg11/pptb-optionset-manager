@@ -15,6 +15,7 @@ A [Power Platform ToolBox](https://powerplatformtoolbox.com) tool for creating a
 - **Reorder** options by dragging or with Alt+Up/Down.
 - **Review before saving**: see every insert, update, delete and reorder before anything is sent, and revert any single change. Deleted options can be restored from the pending changes bar until you save.
 - **Saves only what changed**, then publishes only that choice (and its table for a local choice), so other unpublished customizations are left alone.
+- **Open in Power Apps**: jump from a loaded global choice to its solution, or from a local choice to its table.
 - **Import** options from CSV or JSON, and **export** the current choice from the Code tab as JSON (all languages) or CSV (default language).
 
 ## Requirements
@@ -51,7 +52,7 @@ It doesn't change records, tables, forms, views or security, or any column other
 
 ## Data and privacy
 
-The tool talks only to your connected Dataverse environment, through the ToolBox APIs. It makes no other network calls, sends no telemetry and declares no CSP exceptions. Debug logging is off unless you set `window.__PPTB_DEBUG__ = true` in the tool's DevTools, and it logs only metadata names and counts.
+The tool talks only to your connected Dataverse environment, through the ToolBox APIs. It makes no other network calls, sends no telemetry and declares no CSP exceptions. **Open in Power Apps** opens make.powerapps.com in your browser. Debug logging is off unless you set `window.__PPTB_DEBUG__ = true` in the tool's DevTools, and it logs only metadata names and counts.
 
 ## Development
 

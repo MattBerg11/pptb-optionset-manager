@@ -1,5 +1,5 @@
 import { Button, FluentProvider, Tooltip, makeStyles, tokens } from "@fluentui/react-components";
-import { ArrowImportRegular } from "@fluentui/react-icons";
+import { ArrowImportRegular, OpenRegular } from "@fluentui/react-icons";
 import { useCallback, useMemo, useState } from "react";
 import { DataverseMetadataService } from "../services/dataverseMetadataService";
 import { EmptyState } from "../components/shared";
@@ -17,6 +17,7 @@ import { useSettings } from "../hooks/useSettings";
 import { useConnection } from "../hooks/useToolboxAPI";
 import { useThemeSync } from "../hooks/useThemeSync";
 import { assignOptionValues } from "../utils/optionValues";
+import { solutionUrl, tableUrl } from "../utils/makerPortalLinks";
 import { useHasValidated } from "../hooks/useHasValidated";
 import { useGridActiveState } from "../hooks/useGridActiveState";
 import { useEnvironmentLanguages } from "../hooks/useEnvironmentLanguages";
@@ -321,6 +322,22 @@ export function App(): JSX.Element {
 
     const [codeFormat, setCodeFormat] = useState<CodeFormat>("json");
 
+    const handleOpenInPowerApps = useCallback(async () => {
+        try {
+            const environmentId = await metadataService.getEnvironmentId();
+            const url = state.draft.scope === "local" ? tableUrl(environmentId, await metadataService.getEntityMetadataId(state.draft.entityLogicalName)) : solutionUrl(environmentId, state.metadataSelection.solutionId);
+            await window.toolboxAPI.utils.openInConnectionBrowser(url);
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : "Failed to open Power Apps.";
+            window.toolboxAPI?.utils?.showNotification?.({
+                title: "Open in Power Apps failed",
+                body: msg,
+                type: "error",
+                duration: 5000,
+            });
+        }
+    }, [metadataService, state.draft.scope, state.draft.entityLogicalName, state.metadataSelection.solutionId]);
+
     const actionButtons = useMemo(() => {
         const buttons: Array<{ key: string; element: JSX.Element }> = [];
 
@@ -342,6 +359,19 @@ export function App(): JSX.Element {
                     <Button key="import" size="small" icon={<ArrowImportRegular />} onClick={openImport} title="Import option values" aria-label="Import option values">
                         Import
                     </Button>
+                ),
+            });
+        }
+
+        if (state.draft.operation === "update") {
+            buttons.push({
+                key: "open-in-power-apps",
+                element: (
+                    <Tooltip key="open-in-power-apps" content={state.draft.scope === "local" ? "Open this table in Power Apps" : "Open this choice's solution in Power Apps"} relationship="description">
+                        <Button size="small" icon={<OpenRegular />} onClick={() => void handleOpenInPowerApps()}>
+                            Open in Power Apps
+                        </Button>
+                    </Tooltip>
                 ),
             });
         }
@@ -376,6 +406,7 @@ export function App(): JSX.Element {
         state.draft,
         actions.syncFromCode,
         handleValidate,
+        handleOpenInPowerApps,
         openImport,
         saveLoadHook.computed.saveButtonDisabled,
         saveLoadHook.computed.saveButtonLabel,

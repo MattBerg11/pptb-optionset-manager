@@ -13,6 +13,21 @@ function serviceFor(matchingType: string): DataverseMetadataService {
     return new DataverseMetadataService(api as unknown as DataverseAPI.API);
 }
 
+describe("getEnvironmentId", () => {
+    it("reads the ID from RetrieveCurrentOrganization and only asks once", async () => {
+        const queryData = vi.fn(async () => ({ Detail: { EnvironmentId: "env-1" } }));
+        const service = new DataverseMetadataService({ queryData } as unknown as DataverseAPI.API);
+        expect(await service.getEnvironmentId()).toBe("env-1");
+        expect(await service.getEnvironmentId()).toBe("env-1");
+        expect(queryData).toHaveBeenCalledTimes(1);
+    });
+
+    it("fails rather than building a link without an ID", async () => {
+        const service = new DataverseMetadataService({ queryData: vi.fn(async () => ({})) } as unknown as DataverseAPI.API);
+        await expect(service.getEnvironmentId()).rejects.toThrow("environment ID");
+    });
+});
+
 describe("getLocalChoiceOptions: attributeType", () => {
     it.each(["Picklist", "MultiSelectPicklist", "State", "Status"])("reports a %s column as that type", async (type) => {
         const detail = await serviceFor(type).getLocalChoiceOptions("account", "col", "Col");

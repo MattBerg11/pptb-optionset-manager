@@ -586,6 +586,32 @@ export class DataverseMetadataService {
     }
 
     /**
+     * Get the Power Platform environment ID that maker portal links use (it differs from the organization ID).
+     */
+    async getEnvironmentId(): Promise<string> {
+        const cacheKey = "environmentId";
+        const cached = this.cache.get<string>(cacheKey);
+        if (cached) return cached;
+
+        return this.deduplicator.deduplicate(cacheKey, async () => {
+            const result = await this.dataverseAPI.queryData("RetrieveCurrentOrganization(AccessType=@p1)?@p1=Microsoft.Dynamics.CRM.EndpointAccessType'Default'") as unknown as { Detail?: { EnvironmentId?: string } };
+            const environmentId = result.Detail?.EnvironmentId;
+            if (!environmentId) throw new Error("Dataverse did not return an environment ID.");
+            this.cache.set(cacheKey, environmentId);
+            return environmentId;
+        });
+    }
+
+    /**
+     * Get a table's MetadataId from its logical name.
+     */
+    async getEntityMetadataId(logicalName: string): Promise<string> {
+        const result = await this.dataverseAPI.queryData(`EntityDefinitions(LogicalName='${logicalName.replace(/'/g, "''")}')?$select=MetadataId`) as unknown as { MetadataId?: string };
+        if (!result.MetadataId) throw new Error(`Table "${logicalName}" was not found.`);
+        return result.MetadataId;
+    }
+
+    /**
      * Get the base (default) language code of the Dataverse organization.
      */
     async getBaseLanguage(): Promise<number> {
