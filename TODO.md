@@ -24,6 +24,7 @@ LLM: ONLY MODIFY THIS LIST WHEN EXPLICTELY APPROVED
 
 - **No undo/redo within session** — deleting a row is unrecoverable. Consider a simple action history stack in `useOptionSetBuilder`.
 - **XML import** — XML is a common Dataverse choice-metadata format. Not currently supported.
+- **Import templates** — offer a downloadable .csv and .json template from the Import dialog, so users can start from the expected columns and shape.
 
 - Clarify what "Show system optionsets" means, because there are system ones, and read-only ones. Perhaps we have an extra option in that menu list for both.
 - convert text inputs to a component and create a small text character count validator. When over 50% show the counter, and when 90% of max length turn red
