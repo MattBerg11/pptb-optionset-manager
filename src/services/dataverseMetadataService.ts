@@ -182,7 +182,7 @@ export class DataverseMetadataService {
     }
 
     /**
-     * Drop only the global option set list (after an option set is created or deleted)
+     * Drop only the global option set list (after an option set is created)
      */
     invalidateGlobalOptionSets(): void {
         this.cache.delete("global-optionsets:all");

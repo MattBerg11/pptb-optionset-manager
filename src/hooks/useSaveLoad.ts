@@ -15,7 +15,6 @@ interface UseSaveLoadResult {
     progress: SaveProgress;
     handlers: {
         handleSave: () => Promise<void>;
-        handleDeleteOptionSet: () => Promise<void>;
         handleLoadConfirm: (detail: GlobalOptionSetDetail) => void;
         handleLocalChoiceConfirm: (detail: LocalChoiceDetail) => void;
         dismissSuccess: () => void;
@@ -51,9 +50,8 @@ function applyStep(steps: SaveStep[], step: SaveStep): SaveStep[] {
 }
 
 interface SaveLoadCallbacks {
-    /** The set of global option sets in the environment changed (created / deleted); `selected` is the set to show as selected. */
+    /** A global option set was created in the environment; `selected` is the set to show as selected. */
     onGlobalOptionSetsChanged?: (selected: string | null) => void;
-    onOptionSetDeleted?: () => void;
 }
 
 // Name of the global option set that holds this draft's options, if any
@@ -109,7 +107,6 @@ export function useSaveLoad(
     actions: {
         setField: <K extends keyof OptionSetDraft>(field: K, value: OptionSetDraft[K]) => void;
         applyDraft: (nextDraft: OptionSetDraft, options?: ApplyDraftOptions) => void;
-        resetDraft: () => void;
         setApiErrorRows: (rowIds: string[]) => void;
         setApiSuccessRows: (rowIds: string[]) => void;
         applySaveResult: (rows: OperationResultRow[]) => void;
@@ -338,24 +335,6 @@ export function useSaveLoad(
 
     const saveButtonLabel = state.status === "saving" ? "Saving..." : "Save";
     const saveButtonDisabled = !canSave || state.status === "saving" || state.status === "loading";
-    const handleDeleteOptionSet = useCallback(async () => {
-        if (draft.scope !== "global" || draft.operation !== "update" || !draft.optionSetSchemaName) return;
-        setState((prev) => ({ ...prev, status: "saving", error: null }));
-        try {
-            // No publish afterwards: Dataverse publishes deletes on its own, and a failed publish here was reported as a failed delete
-            await window.dataverseAPI.deleteGlobalOptionSet(draft.optionSetSchemaName);
-            notify("Deleted", `Option set "${draft.optionSetSchemaName}" was deleted from Dataverse.`, "success", 4000);
-            actions.resetDraft();
-            setState({ status: "idle", error: null, successMessage: null, loadedOptionSetName: null, conflictDialog: { ...NO_CONFLICT } });
-            metadataService.invalidateGlobalOptionSets();
-            callbacksRef.current?.onGlobalOptionSetsChanged?.(null);
-            callbacksRef.current?.onOptionSetDeleted?.();
-        } catch (err) {
-            const msg = err instanceof Error ? err.message : "Failed to delete option set";
-            setState((prev) => ({ ...prev, status: "error", error: msg, successMessage: null }));
-            notify("Delete Failed", msg, "error", 5000);
-        }
-    }, [draft, actions, metadataService, notify]);
 
     const saveTooltip = !connection
         ? "No Dataverse connection"
@@ -374,7 +353,7 @@ export function useSaveLoad(
     return {
         state,
         progress,
-        handlers: { handleSave, handleDeleteOptionSet, handleLoadConfirm, handleLocalChoiceConfirm, dismissSuccess, dismissError, closeProgress, confirmOverwrite, cancelConflict },
+        handlers: { handleSave, handleLoadConfirm, handleLocalChoiceConfirm, dismissSuccess, dismissError, closeProgress, confirmOverwrite, cancelConflict },
         computed: { canSave, saveButtonLabel, saveButtonDisabled, saveTooltip },
     };
 }

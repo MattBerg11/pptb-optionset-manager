@@ -8,7 +8,7 @@ A [Power Platform ToolBox](https://powerplatformtoolbox.com) tool for creating a
 
 ## Features
 
-- **Global choices**: create new ones in a solution, or load an existing one to edit its display name, description and options. Delete a global choice you no longer need.
+- **Global choices**: create new ones in a solution, or load an existing one to edit its display name, description and options.
 - **Local choices**: edit the options of an existing choice or multi-select choice column on any table. State and Status columns open read-only.
 - **Multi-language labels and descriptions** for every option. Only the languages installed in your environment are offered.
 - **Option details**: value, color, external value and hidden flag. New values follow the publisher's option value prefix, and existing values can be changed.
@@ -35,9 +35,9 @@ Settings (the gear icon) control language sub-rows, validation of blank translat
 
 ## What this tool changes
 
-Nothing is written to Dataverse until you click **Save** or **Delete** and confirm. The confirmation names the connected environment.
+Nothing is written to Dataverse until you click **Save** and confirm. The confirmation names the connected environment.
 
-- **Global choices**: creates a new global choice in the selected solution, updates the display name and description of an existing one, and deletes one. Dataverse refuses the delete while a column still uses it.
+- **Global choices**: creates a new global choice in the selected solution and updates the display name and description of an existing one.
 - **Options** of a global choice or a local choice column: inserts new options; updates labels, descriptions, color, external value and the hidden flag; deletes options; and changes their order. A global choice is shared, so its changes apply to every column that uses it.
 - **Changed option values**: the option is created with the new value and the old one is deleted. Records are not updated: records that stored the old value, or a deleted option's value, keep that number, which no longer has a label.
 - **Solutions**: new choices and options are added to the selected solution.

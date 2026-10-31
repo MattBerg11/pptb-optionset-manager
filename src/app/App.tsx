@@ -1,8 +1,8 @@
 import { Button, FluentProvider, Tooltip, makeStyles, tokens } from "@fluentui/react-components";
-import { ArrowImportRegular, DeleteRegular } from "@fluentui/react-icons";
+import { ArrowImportRegular } from "@fluentui/react-icons";
 import { useCallback, useMemo, useState } from "react";
 import { DataverseMetadataService } from "../services/dataverseMetadataService";
-import { ConfirmDialog, EmptyState } from "../components/shared";
+import { EmptyState } from "../components/shared";
 import { ActionBar, StatusBar, TabNavigation } from "../components/editor";
 import { BuilderTab } from "../components/editor";
 import { CodeTab, CodeTabActions, type CodeFormat } from "../components/editor/CodeTab";
@@ -241,7 +241,6 @@ export function App(): JSX.Element {
         setActiveTab,
         settingsPanelOpen,
         importModalOpen,
-        deleteConfirmOpen,
         schemaNameManuallyEdited,
         displayNameDirty,
         setSchemaNameManuallyEdited,
@@ -250,8 +249,6 @@ export function App(): JSX.Element {
         closeSettings,
         openImport,
         closeImport,
-        openDeleteConfirm,
-        closeDeleteConfirm,
     } = usePageOrchestration();
     const { connection, isLoading } = useConnection();
     const { settings, updateSettings, resetSettings, isLoading: settingsLoading } = useSettings();
@@ -267,14 +264,13 @@ export function App(): JSX.Element {
         [connection]
     );
     const { isGridActive, activate: activateGrid, deactivate: deactivateGrid } = useGridActiveState(state.draft.operation);
-    // Bumped when option sets are created / deleted so the sidebar picker reloads its list
+    // Bumped when an option set is created so the sidebar picker reloads its list
     const [globalOptionSetsVersion, setGlobalOptionSetsVersion] = useState(0);
     const saveLoadHook = useSaveLoad(state.draft, state.issues, connection, state.dirtyRowIds, state.loadedOptionValues, state.baselineRows, state.baselineProperties, actions, metadataService, {
         onGlobalOptionSetsChanged: (selected) => {
             setGlobalOptionSetsVersion((version) => version + 1);
             actions.updateMetadataSelection({ selectedGlobalOptionSetName: selected });
         },
-        onOptionSetDeleted: deactivateGrid,
     });
 
     const { hasValidated, setHasValidated } = useHasValidated(state.draft);
@@ -350,17 +346,6 @@ export function App(): JSX.Element {
             });
         }
 
-        if (state.draft.scope === "global" && state.draft.operation === "update") {
-            buttons.push({
-                key: "delete",
-                element: (
-                    <Button key="delete" appearance="subtle" size="small" icon={<DeleteRegular />} onClick={openDeleteConfirm} title="Delete option set" aria-label="Delete option set">
-                        Delete Option Set
-                    </Button>
-                ),
-            });
-        }
-
         buttons.push({
             key: "validate",
             element: (
@@ -392,7 +377,6 @@ export function App(): JSX.Element {
         actions.syncFromCode,
         handleValidate,
         openImport,
-        openDeleteConfirm,
         saveLoadHook.computed.saveButtonDisabled,
         saveLoadHook.computed.saveButtonLabel,
         saveLoadHook.computed.saveTooltip,
@@ -618,25 +602,6 @@ export function App(): JSX.Element {
                     removedRemotely={saveLoadHook.state.conflictDialog.removedRemotely}
                     onConfirm={saveLoadHook.handlers.confirmOverwrite}
                     onCancel={saveLoadHook.handlers.cancelConflict}
-                />
-
-                <ConfirmDialog
-                    open={deleteConfirmOpen}
-                    title="Delete Option Set"
-                    message={
-                        <>
-                            Are you sure you want to delete "{state.draft.optionSetSchemaName}" from {connection ? <strong>{connection.name}</strong> : "Dataverse"}
-                            {connection?.environment === "Production" ? " (Production)" : ""}? This cannot be undone. Dataverse refuses the delete while a column still uses this option set.
-                        </>
-                    }
-                    confirmLabel="Delete"
-                    confirmIntent="danger"
-                    cancelLabel="Cancel"
-                    onConfirm={async () => {
-                        closeDeleteConfirm();
-                        await saveLoadHook.handlers.handleDeleteOptionSet();
-                    }}
-                    onCancel={closeDeleteConfirm}
                 />
             </div>
         </FluentProvider>
