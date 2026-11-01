@@ -69,6 +69,17 @@ function buildDescription(row: OptionDraftRow, defaultLanguageCode: number, clea
     };
 }
 
+// One entry of Options[] on a new global option set. A null Value lets Dataverse assign it.
+function newOptionMetadata(row: OptionDraftRow, value: number | undefined, defaultLanguageCode: number): Record<string, unknown> {
+    const option: Record<string, unknown> = { Value: value ?? null, Label: buildLabel(row, defaultLanguageCode) };
+    const description = buildDescription(row, defaultLanguageCode);
+    if (description) option.Description = description;
+    if (row.color) option.Color = row.color;
+    if (row.externalKey) option.ExternalValue = row.externalKey;
+    if (row.hidden !== undefined) option.IsHidden = row.hidden;
+    return option;
+}
+
 // What the user emptied on a loaded row. Omitted fields are left untouched by Dataverse, so clears must be sent explicitly.
 interface ClearedFields {
     labelLanguages: number[];
@@ -92,6 +103,12 @@ function findClearedFields(row: OptionDraftRow, baseline: OptionDraftRow | undef
 function normalizeError(error: unknown): string {
     if (error instanceof Error) return error.message;
     return "Unknown Dataverse error.";
+}
+
+// PPTB always sends Prefer: return=representation, and Dataverse leaves OData-EntityId out of that response, so
+// createGlobalOptionSet throws this after a 2xx. Rejected requests carry the Dataverse error instead.
+function isMissingEntityIdError(error: unknown): boolean {
+    return error instanceof Error && error.message.includes("OData-EntityId");
 }
 
 type TargetDraft = Pick<OptionSetDraft, "scope" | "optionSetSchemaName" | "entityLogicalName" | "attributeLogicalName" | "globalOptionSetName" | "solutionUniqueName" | "attributeType">;
@@ -191,10 +208,14 @@ export async function upsertOptionSet(
         }
     };
 
-    // ── CREATE global: create the option set shell, then insert options individually ──
-    // Options[] is deliberately not sent in the POST body: PPTB's createGlobalOptionSet wrapper can throw when
-    // the OData-EntityId header is absent from the response even though Dataverse created the set.
-    if (draft.scope === "global" && draft.operation === "create") {
+    // Rows without a value get one from the publisher's range; if the prefix is unknown Dataverse assigns it.
+    const assignedValues = assignOptionValues(draft.rows, draft.optionValuePrefix, persisted);
+
+    // ── CREATE global: the set and its options go in one request ──
+    // Dataverse caches metadata, so a set it just created can 404 for about 30 seconds. Inserting the options
+    // one by one would depend on the new set being found inside that window.
+    const isNewGlobalSet = draft.scope === "global" && draft.operation === "create";
+    if (isNewGlobalSet) {
         const alreadyExists = await runStep(`Checking whether "${draft.optionSetSchemaName}" already exists`, () => globalOptionSetExists(draft.optionSetSchemaName), (exists) =>
             exists ? "Already exists" : "Does not exist yet"
         );
@@ -202,24 +223,25 @@ export async function upsertOptionSet(
             throw new OptionSetOperationError(`A global option set named "${draft.optionSetSchemaName}" already exists. Select it in the sidebar to edit it instead.`, "CreateGlobalOptionSet");
         }
 
-        try {
-            await runStep(`Creating option set "${draft.optionSetSchemaName}"`, () =>
-                window.dataverseAPI.createGlobalOptionSet(
-                {
-                    "@odata.type": "Microsoft.Dynamics.CRM.OptionSetMetadata",
-                    Name: draft.optionSetSchemaName,
-                    DisplayName: plainLabel(draft.displayName, draft.defaultLanguageCode),
-                    Description: plainLabel(draft.description || draft.displayName, draft.defaultLanguageCode),
-                    OptionSetType: "Picklist",
-                    IsGlobal: true,
-                },
-                solutionOptions
-                )
-            );
-        } catch (createError) {
-            // Only carry on if the set really exists now; any other failure is a genuine create error.
-            if (!(await globalOptionSetExists(draft.optionSetSchemaName))) throw createError;
-        }
+        const optionCount = `${draft.rows.length} ${draft.rows.length === 1 ? "option" : "options"}`;
+        await runStep(`Creating option set "${draft.optionSetSchemaName}" with ${optionCount}`, async () => {
+            try {
+                await window.dataverseAPI.createGlobalOptionSet(
+                    {
+                        "@odata.type": "Microsoft.Dynamics.CRM.OptionSetMetadata",
+                        Name: draft.optionSetSchemaName,
+                        DisplayName: plainLabel(draft.displayName, draft.defaultLanguageCode),
+                        Description: plainLabel(draft.description || draft.displayName, draft.defaultLanguageCode),
+                        OptionSetType: "Picklist",
+                        IsGlobal: true,
+                        Options: draft.rows.map((row) => newOptionMetadata(row, row.optionValue ?? assignedValues.get(row.rowId), draft.defaultLanguageCode)),
+                    },
+                    solutionOptions
+                );
+            } catch (createError) {
+                if (!isMissingEntityIdError(createError)) throw createError;
+            }
+        });
     }
 
     // Display name / description of an existing global set. Runs before any option change, so a failure here
@@ -231,15 +253,15 @@ export async function upsertOptionSet(
         await runStep(`Updating option set ${what}`, () => updateGlobalOptionSetProperties(draft, changed, solutionOptions));
     }
 
-    // Rows without a value get one from the publisher's range; if the prefix is unknown Dataverse assigns it on insert.
-    const assignedValues = assignOptionValues(draft.rows, draft.optionValuePrefix, persisted);
     const target = targetParams(draft);
 
     const isState = isStateColumn(draft);
     const isStatus = isStatusColumn(draft);
 
-    const operationRows: OptionSetOperationResult["rows"] = [];
-    let created = 0;
+    const operationRows: OptionSetOperationResult["rows"] = isNewGlobalSet
+        ? draft.rows.map((row) => ({ rowId: row.rowId, optionValue: row.optionValue ?? assignedValues.get(row.rowId), status: "created", message: "Option created." }))
+        : [];
+    let created = operationRows.length;
     let updated = 0;
     let skipped = 0;
     let deleted = 0;
@@ -248,7 +270,7 @@ export async function upsertOptionSet(
     const finalValues: Array<number | undefined> = [];
     const insertedValues: number[] = [];
 
-    for (const row of draft.rows) {
+    for (const row of isNewGlobalSet ? [] : draft.rows) {
         const requestedValue = row.optionValue ?? assignedValues.get(row.rowId);
         const isPersistedRow = row.optionValue !== undefined && persisted.has(row.optionValue);
         let finalValue = requestedValue;

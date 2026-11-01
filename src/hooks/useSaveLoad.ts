@@ -4,10 +4,14 @@ import type { GlobalOptionSetDetail, LocalChoiceDetail, OperationResultRow, Opti
 import { upsertOptionSet } from "../services/dataverseOptionSetService";
 import type { ApplyDraftOptions } from "./useOptionSetBuilder";
 import { extractDescription, optionsToRows } from "../utils/optionRows";
+import { retryWithDelays } from "../utils/retry";
 
 const DEBUG = typeof window !== "undefined" && (window as unknown as Record<string, unknown>)["__PPTB_DEBUG__"] === true;
 
 const NO_CONFLICT = { open: false, addedRemotely: 0, removedRemotely: 0 } as const;
+
+// Dataverse caches metadata, so a set it just created can 404 for about 30 seconds
+const NEW_SET_RELOAD_DELAYS_MS = [2000, 4000, 8000, 16000];
 
 interface UseSaveLoadResult {
     state: SaveLoadState;
@@ -159,12 +163,6 @@ export function useSaveLoad(
                 console.error(`[SaveLoad] ${errorMessage}`);
                 setState((prev) => ({ ...prev, status: "error", error: errorMessage, successMessage: null }));
                 actionsRef.current.setApiErrorRows(failedRows.map((r) => r.rowId));
-                if (draft.operation === "create") {
-                    // The shell exists in Dataverse now; further saves must update it rather than try to create it again
-                    actionsRef.current.setField("operation", "update");
-                    callbacksRef.current?.onGlobalOptionSetsChanged?.(draft.scope === "global" ? draft.optionSetSchemaName : null);
-                    metadataService.invalidateGlobalOptionSets();
-                }
                 notify("Save Error", errorMessage, "error", 5000);
                 return;
             }
@@ -183,16 +181,12 @@ export function useSaveLoad(
             notify("Success", saveMessage, "success", 3000);
 
             const wasCreated = draft.operation === "create" && draft.scope === "global";
-            if (wasCreated) {
-                metadataService.invalidateGlobalOptionSets();
-                callbacksRef.current?.onGlobalOptionSetsChanged?.(draft.optionSetSchemaName);
-            }
 
             // Back-sync: reload to pick up server-assigned values after create/update
             const reloadStep: SaveStep = { id: "reload", label: "Reloading option set from Dataverse", status: "running" };
             reportStep(reloadStep);
             try {
-                const reloadedDraft = await reloadDraft(draft, metadataService);
+                const reloadedDraft = await retryWithDelays(() => reloadDraft(draft, metadataService), wasCreated ? NEW_SET_RELOAD_DELAYS_MS : []);
                 reportStep({ ...reloadStep, status: "done", detail: `${reloadedDraft.rows.length} options` });
                 actionsRef.current.applyDraft(reloadedDraft);
                 actionsRef.current.setApiSuccessRows(reloadedDraft.rows.filter((row) => row.optionValue !== undefined && !loadedOptionValues.has(row.optionValue)).map((row) => row.rowId));
@@ -205,6 +199,12 @@ export function useSaveLoad(
                 if (draft.operation === "create") {
                     actionsRef.current.setField("operation", "update");
                 }
+            }
+
+            // After the reload, so the sidebar's list is read once the new set can be found
+            if (wasCreated) {
+                metadataService.invalidateGlobalOptionSets();
+                callbacksRef.current?.onGlobalOptionSetsChanged?.(draft.optionSetSchemaName);
             }
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "Failed to save option set";

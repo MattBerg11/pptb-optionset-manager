@@ -287,14 +287,68 @@ describe("upsertOptionSet: creating a global option set", () => {
         expect(api.execute).not.toHaveBeenCalled();
     });
 
-    it("creates the set, inserts its options and publishes it", async () => {
+    const definition = (): Record<string, unknown> => (api.createGlobalOptionSet.mock.calls[0] as unknown as [Record<string, unknown>])[0];
+    const options = (): Array<Record<string, unknown>> => definition().Options as Array<Record<string, unknown>>;
+
+    const nameIsFree = (): void => {
         api.queryData.mockRejectedValueOnce(new Error("Not found"));
-        await upsertOptionSet({ ...draft([row]), operation: "create" });
+    };
+
+    it("creates the set with its options in one request and publishes it", async () => {
+        nameIsFree();
+        const second: OptionDraftRow = { rowId: "second", optionValue: 100000005, labels: [{ languageCode: EN, label: "Second" }] };
+        const result = await upsertOptionSet({ ...draft([row, second]), operation: "create" });
 
         expect(api.createGlobalOptionSet).toHaveBeenCalledTimes(1);
-        expect(api.insertOptionValue).toHaveBeenCalledTimes(1);
+        expect(options().map((option) => option.Value)).toEqual([100000006, 100000005]);
+        expect(api.insertOptionValue).not.toHaveBeenCalled();
         expect(api.orderOption).not.toHaveBeenCalled();
         expect(api.execute).toHaveBeenCalledTimes(1);
+        expect(result.summary).toMatchObject({ created: 2, failed: 0 });
+        expect(result.rows).toContainEqual(expect.objectContaining({ rowId: "new", status: "created", optionValue: 100000006 }));
+    });
+
+    it("sends every field of a new option, leaving out what is empty", async () => {
+        nameIsFree();
+        const full: OptionDraftRow = { rowId: "full", externalKey: "EXT", color: "#ff0000", hidden: true, labels: [{ languageCode: EN, label: "Full", description: "All fields" }, { languageCode: DE, label: "Voll" }] };
+        await upsertOptionSet({ ...draft([full, row]), operation: "create" });
+
+        const [first, plain] = options();
+        expect(first).toMatchObject({ Color: "#ff0000", ExternalValue: "EXT", IsHidden: true });
+        expect(languages(first.Label).map((l) => l.LanguageCode)).toEqual([EN, DE]);
+        expect(languages(first.Description)).toEqual([expect.objectContaining({ LanguageCode: EN, Label: "All fields" })]);
+        expect(plain).not.toHaveProperty("Color");
+        expect(plain).not.toHaveProperty("ExternalValue");
+        expect(plain).not.toHaveProperty("IsHidden");
+        expect(plain).not.toHaveProperty("Description");
+    });
+
+    it("lets Dataverse assign the value when the publisher prefix is unknown", async () => {
+        nameIsFree();
+        await upsertOptionSet({ ...draft([row]), operation: "create", optionValuePrefix: 0 });
+        expect(options()[0].Value).toBeNull();
+    });
+
+    it("treats PPTB's missing OData-EntityId error as a successful create", async () => {
+        nameIsFree();
+        api.createGlobalOptionSet.mockRejectedValueOnce(
+            new Error("Error invoking remote method 'dataverse.createGlobalOptionSet': Error: Create global option set failed: Failed to retrieve global option set MetadataId from response. The OData-EntityId header was missing.")
+        );
+        const steps: string[] = [];
+        const result = await upsertOptionSet({ ...draft([row]), operation: "create" }, undefined, undefined, [], (step) => steps.push(step.status));
+
+        expect(steps).not.toContain("failed");
+        expect(result.summary).toMatchObject({ created: 1, failed: 0 });
+        expect(api.execute).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops the save when Dataverse rejects the create", async () => {
+        nameIsFree();
+        api.createGlobalOptionSet.mockRejectedValueOnce(new Error("0x80048403: A choice with this name already exists."));
+
+        await expect(upsertOptionSet({ ...draft([row]), operation: "create" })).rejects.toThrow("already exists");
+        expect(api.insertOptionValue).not.toHaveBeenCalled();
+        expect(api.execute).not.toHaveBeenCalled();
     });
 });
 
