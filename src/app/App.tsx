@@ -10,7 +10,6 @@ import { ConflictDialog, ImportModal, SaveProgressDialog, SaveReviewDialog } fro
 import { SettingsPanel } from "../components/sidebars";
 import { SidebarPanel } from "../components/sidebars";
 import { isGlobalChoiceColumn } from "../models/optionSetModels";
-import { orderOptionSet } from "../services/dataverseOptionSetService";
 import { useOptionSetBuilder } from "../hooks/useOptionSetBuilder";
 import { usePageOrchestration } from "../hooks/usePageOrchestration";
 import { useSaveLoad } from "../hooks/useSaveLoad";
@@ -461,26 +460,6 @@ export function App(): JSX.Element {
         }
     }, [actions, metadataService, saveLoadHook.handlers, state.draft.globalOptionSetName]);
 
-    const handleApplyOrder = useCallback(async () => {
-        try {
-            await orderOptionSet(state.draft);
-            window.toolboxAPI?.utils?.showNotification?.({
-                title: "Order applied",
-                body: "Option order applied successfully.",
-                type: "success",
-                duration: 3000,
-            });
-        } catch (err) {
-            const msg = err instanceof Error ? err.message : "Failed to apply option order.";
-            window.toolboxAPI?.utils?.showNotification?.({
-                title: "Apply order failed",
-                body: msg,
-                type: "error",
-                duration: 5000,
-            });
-        }
-    }, [state.draft]);
-
     // resetDraft keeps the sidebar's publisher / solution so the next option set starts with the same context
     const handleNew = useCallback(() => {
         actions.resetDraft();
@@ -589,7 +568,6 @@ export function App(): JSX.Element {
                                         onRemoveRow={actions.removeRow}
                                         onUpdateRow={actions.updateRow}
                                         onReorderRows={actions.reorderRows}
-                                        onApplyOrder={handleApplyOrder}
                                         validationIssues={state.issues}
                                         sortLanguagesByCode={settings.sortLanguagesByCode}
                                         hasValidated={hasValidated}
@@ -647,6 +625,7 @@ export function App(): JSX.Element {
                     draft={state.draft}
                     changeSet={state.changeSet}
                     connection={connection}
+                    entityDisplayName={state.metadataSelection.entityDisplayName}
                     onRevertRow={actions.revertRow}
                     onRestoreRow={actions.restoreRow}
                     onRevertOrder={actions.revertOrder}

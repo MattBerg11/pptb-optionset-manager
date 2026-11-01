@@ -191,36 +191,34 @@ export async function upsertOptionSet(
         }
     };
 
-    // ── CREATE / UPSERT global: create the option set shell, then insert options individually ──
+    // ── CREATE global: create the option set shell, then insert options individually ──
     // Options[] is deliberately not sent in the POST body: PPTB's createGlobalOptionSet wrapper can throw when
     // the OData-EntityId header is absent from the response even though Dataverse created the set.
-    if (draft.scope === "global" && (draft.operation === "create" || draft.operation === "upsert")) {
+    if (draft.scope === "global" && draft.operation === "create") {
         const alreadyExists = await runStep(`Checking whether "${draft.optionSetSchemaName}" already exists`, () => globalOptionSetExists(draft.optionSetSchemaName), (exists) =>
             exists ? "Already exists" : "Does not exist yet"
         );
-        if (alreadyExists && draft.operation === "create") {
+        if (alreadyExists) {
             throw new OptionSetOperationError(`A global option set named "${draft.optionSetSchemaName}" already exists. Select it in the sidebar to edit it instead.`, "CreateGlobalOptionSet");
         }
 
-        if (!alreadyExists) {
-            try {
-                await runStep(`Creating option set "${draft.optionSetSchemaName}"`, () =>
-                    window.dataverseAPI.createGlobalOptionSet(
-                    {
-                        "@odata.type": "Microsoft.Dynamics.CRM.OptionSetMetadata",
-                        Name: draft.optionSetSchemaName,
-                        DisplayName: plainLabel(draft.displayName, draft.defaultLanguageCode),
-                        Description: plainLabel(draft.description || draft.displayName, draft.defaultLanguageCode),
-                        OptionSetType: "Picklist",
-                        IsGlobal: true,
-                    },
-                    solutionOptions
-                    )
-                );
-            } catch (createError) {
-                // Only carry on if the set really exists now; any other failure is a genuine create error.
-                if (!(await globalOptionSetExists(draft.optionSetSchemaName))) throw createError;
-            }
+        try {
+            await runStep(`Creating option set "${draft.optionSetSchemaName}"`, () =>
+                window.dataverseAPI.createGlobalOptionSet(
+                {
+                    "@odata.type": "Microsoft.Dynamics.CRM.OptionSetMetadata",
+                    Name: draft.optionSetSchemaName,
+                    DisplayName: plainLabel(draft.displayName, draft.defaultLanguageCode),
+                    Description: plainLabel(draft.description || draft.displayName, draft.defaultLanguageCode),
+                    OptionSetType: "Picklist",
+                    IsGlobal: true,
+                },
+                solutionOptions
+                )
+            );
+        } catch (createError) {
+            // Only carry on if the set really exists now; any other failure is a genuine create error.
+            if (!(await globalOptionSetExists(draft.optionSetSchemaName))) throw createError;
         }
     }
 
@@ -306,27 +304,17 @@ export async function upsertOptionSet(
                 if (finalValue !== undefined) insertedValues.push(finalValue);
                 operationRows.push({ rowId: row.rowId, optionValue: finalValue, status: "created", message: "Option created." });
             };
-            const update = async (message: string): Promise<void> => {
+            const update = async (): Promise<void> => {
                 // MergeLabels keeps languages missing from Label/Description, so a removed translation needs a full replace.
                 // Label and Description are both sent in full, so replacing drops only what was cleared.
                 await runStep(`Updating option "${rowName}"`, () => callUpdate(cleared.labelLanguages.length === 0));
                 updated += 1;
-                operationRows.push({ rowId: row.rowId, optionValue: finalValue, status: "updated", message });
+                operationRows.push({ rowId: row.rowId, optionValue: finalValue, status: "updated", message: "Option updated." });
             };
 
-            if (draft.operation === "update") {
-                // An existing option is updated; anything not yet in Dataverse is a new option and must be inserted.
-                if (isPersistedRow) await update("Option updated.");
-                else await insert();
-            } else if (draft.operation === "upsert") {
-                try {
-                    await insert();
-                } catch {
-                    await update("Option existed and was updated.");
-                }
-            } else {
-                await insert();
-            }
+            // An existing option is updated; anything not yet in Dataverse is a new option and must be inserted.
+            if (draft.operation === "update" && isPersistedRow) await update();
+            else await insert();
         } catch (rowError) {
             failed += 1;
             operationRows.push({ rowId: row.rowId, optionValue: finalValue, status: "failed", message: normalizeError(rowError) });
@@ -358,8 +346,8 @@ export async function upsertOptionSet(
     }
 
     // Reordering: Dataverse appends new options and keeps existing ones in load order, so only call
-    // OrderOption when the grid order differs from that expected order.
-    if (draft.operation !== "create" && failed === 0 && finalValues.length > 0 && finalValues.every((v): v is number => v !== undefined)) {
+    // OrderOption when the grid order differs from that expected order. Status (statecode) values can't be reordered.
+    if (draft.operation === "update" && !isState && failed === 0 && finalValues.length > 0 && finalValues.every((v): v is number => v !== undefined)) {
         const currentValues = new Set(finalValues);
         const expectedOrder = [...[...persisted].filter((v) => currentValues.has(v)), ...insertedValues];
         if (!sameSequence(finalValues, expectedOrder)) {
@@ -382,26 +370,4 @@ export async function upsertOptionSet(
     }
 
     return { summary: { created, updated, skipped, deleted, failed }, rows: operationRows, warnings, propertiesUpdated };
-}
-
-export async function orderOptionSet(draft: TargetDraft & Pick<OptionSetDraft, "rows">): Promise<void> {
-    if (isStateColumn(draft)) {
-        throw new OptionSetOperationError("Status values can't be reordered in Dataverse.", "OrderOptionSet");
-    }
-    if (draft.rows.some((r) => r.optionValue === undefined || r.optionValue === null)) {
-        throw new OptionSetOperationError("Cannot reorder: some options have no assigned value. Save the option set first to assign values.", "OrderOptionSet");
-    }
-
-    const values = draft.rows.map((r) => r.optionValue).filter((v): v is number => v !== undefined && v !== null);
-
-    const params: Record<string, unknown> = { ...targetParams(draft), Values: values };
-    if (draft.solutionUniqueName) params.SolutionUniqueName = draft.solutionUniqueName;
-
-    await window.dataverseAPI.orderOption(params);
-
-    try {
-        await publishDraftTarget(draft);
-    } catch (publishError) {
-        console.error("[OptionSetService] Publish failed after orderOption:", publishError);
-    }
 }

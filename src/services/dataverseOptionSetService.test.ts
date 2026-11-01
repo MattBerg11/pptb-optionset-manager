@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OptionDraftRow, OptionSetDraft } from "../models/optionSetModels";
-import { orderOptionSet, publishDraftTarget, upsertOptionSet } from "./dataverseOptionSetService";
+import { publishDraftTarget, upsertOptionSet } from "./dataverseOptionSetService";
 
 const EN = 1033;
 const DE = 1031;
@@ -236,24 +236,65 @@ describe("publishDraftTarget: publishes only what was changed", () => {
     });
 });
 
-describe("orderOptionSet: State columns can't be reordered", () => {
-    const local = (attributeType: OptionSetDraft["attributeType"]): OptionSetDraft => ({
-        ...draft([loaded]),
+describe("upsertOptionSet: option order goes through the save", () => {
+    const second: OptionDraftRow = { ...loaded, rowId: "r2", optionValue: 100000001 };
+    const baseline = [loaded, second];
+    const values = new Set([loaded.optionValue!, second.optionValue!]);
+    const local = (attributeType: OptionSetDraft["attributeType"], rows: OptionDraftRow[]): OptionSetDraft => ({
+        ...draft(rows),
         scope: "local",
         entityLogicalName: "account",
         attributeLogicalName: "statuscode",
         attributeType,
     });
 
-    it("refuses to reorder a State column without calling Dataverse", async () => {
-        await expect(orderOptionSet(local("State"))).rejects.toThrow("can't be reordered");
-        expect(api.orderOption).not.toHaveBeenCalled();
+    it("applies an order-only change and publishes just that choice", async () => {
+        await upsertOptionSet(draft([second, loaded]), new Set(), values, baseline);
+
+        expect(api.orderOption).toHaveBeenCalledWith(expect.objectContaining({ OptionSetName: "new_status", Values: [second.optionValue, loaded.optionValue] }));
+        expect(api.updateOptionValue).not.toHaveBeenCalled();
+        expect(api.insertOptionValue).not.toHaveBeenCalled();
+        expect(api.deleteOptionValue).not.toHaveBeenCalled();
+        expect(api.execute).toHaveBeenCalledTimes(1);
         expect(api.publishCustomizations).not.toHaveBeenCalled();
     });
 
-    it.each(["Status", "Picklist"] as const)("still reorders a %s column", async (type) => {
-        await orderOptionSet(local(type));
-        expect(api.orderOption).toHaveBeenCalledTimes(1);
+    it("leaves the order alone when it did not change", async () => {
+        await upsertOptionSet(draft(baseline), new Set(), values, baseline);
+        expect(api.orderOption).not.toHaveBeenCalled();
+    });
+
+    it.each(["Status", "Picklist"] as const)("reorders a %s column and publishes its table", async (type) => {
+        await upsertOptionSet(local(type, [second, loaded]), new Set(), values, baseline);
+
+        expect(api.orderOption).toHaveBeenCalledWith(expect.objectContaining({ EntityLogicalName: "account", AttributeLogicalName: "statuscode" }));
+        expect(api.publishCustomizations).toHaveBeenCalledWith("account");
+    });
+
+    it("never reorders a State column", async () => {
+        await upsertOptionSet(local("State", [second, loaded]), new Set(), values, baseline);
+        expect(api.orderOption).not.toHaveBeenCalled();
+    });
+});
+
+describe("upsertOptionSet: creating a global option set", () => {
+    const row: OptionDraftRow = { rowId: "new", labels: [{ languageCode: EN, label: "New" }] };
+
+    it("refuses a name that already exists, so a review of a new set can't touch an existing one", async () => {
+        await expect(upsertOptionSet({ ...draft([row]), operation: "create" })).rejects.toThrow("already exists");
+        expect(api.createGlobalOptionSet).not.toHaveBeenCalled();
+        expect(api.insertOptionValue).not.toHaveBeenCalled();
+        expect(api.execute).not.toHaveBeenCalled();
+    });
+
+    it("creates the set, inserts its options and publishes it", async () => {
+        api.queryData.mockRejectedValueOnce(new Error("Not found"));
+        await upsertOptionSet({ ...draft([row]), operation: "create" });
+
+        expect(api.createGlobalOptionSet).toHaveBeenCalledTimes(1);
+        expect(api.insertOptionValue).toHaveBeenCalledTimes(1);
+        expect(api.orderOption).not.toHaveBeenCalled();
+        expect(api.execute).toHaveBeenCalledTimes(1);
     });
 });
 

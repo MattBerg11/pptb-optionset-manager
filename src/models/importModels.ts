@@ -14,7 +14,6 @@ export interface ImportParseResult {
 
 export interface JsonImportShape {
   scope?: string;
-  operation?: string;
   optionSetSchemaName?: string;
   displayName?: string;
   description?: string;

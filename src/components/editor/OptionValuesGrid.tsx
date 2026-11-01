@@ -257,8 +257,6 @@ interface OptionValuesGridProps {
     onRemoveRow: (rowId: string) => void;
     onUpdateRow: (rowId: string, updater: (row: OptionDraftRow) => OptionDraftRow) => void;
     onReorderRows: (fromIndex: number, toIndex: number) => void;
-    onApplyOrder?: () => Promise<void>;
-    isLoaded?: boolean;
     validationIssues: ValidationIssue[];
     sortLanguagesByCode: boolean;
     hasValidated: boolean;
@@ -294,8 +292,6 @@ export function OptionValuesGrid({
     onRemoveRow,
     onUpdateRow,
     onReorderRows,
-    onApplyOrder,
-    isLoaded,
     validationIssues,
     sortLanguagesByCode,
     hasValidated,
@@ -328,7 +324,6 @@ export function OptionValuesGrid({
         onUpdateRow,
     });
     const { draggingIndex, dragOverIndex, setDraggingIndex, setDragOverIndex } = useRowDragDrop();
-    const [applyOrderPending, setApplyOrderPending] = useState(false);
     const [reorderingToggled, setReorderingToggled] = useState(false);
     const fixedOptions = statusKind === "state";
     const canChangeRows = !fixedOptions && !readOnly;
@@ -498,23 +493,6 @@ export function OptionValuesGrid({
                 {readOnly && <span className={styles.secondaryText}>Read-only</span>}
                 {fixedOptions && <span className={styles.secondaryText}>Dataverse fixes these Status values. You can change their labels, descriptions and default status reason.</span>}
                 {statusKind === "status" && <span className={styles.secondaryText}>A status reason stays in the Status it was created under.</span>}
-                {isLoaded && isReorderingEnabled && rows.length > 0 && onApplyOrder && (
-                    <Tooltip content="Reorder options in Dataverse to match your current table order" relationship="description">
-                        <Button
-                            appearance="secondary"
-                            size="small"
-                            onClick={() => {
-                                setApplyOrderPending(true);
-                                onApplyOrder()
-                                    .catch((err: unknown) => console.error("[OptionValuesGrid] applyOrder failed:", err))
-                                    .finally(() => setApplyOrderPending(false));
-                            }}
-                            disabled={applyOrderPending}
-                        >
-                            {applyOrderPending ? "Applying\u2026" : "Apply Order"}
-                        </Button>
-                    </Tooltip>
-                )}
             </div>
 
             <div

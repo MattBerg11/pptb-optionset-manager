@@ -39,8 +39,9 @@ function summarizeIssues(issues: ValidationIssue[], rowCount: number): PreviewSu
 }
 
 // Code edits and imports must never retarget a loaded option set, so identity fields stay as loaded.
+// A new draft stays new: the review promises a new option set, so an edited "operation" can't aim it at an existing one.
 function lockIdentity(current: OptionSetDraft, next: OptionSetDraft): OptionSetDraft {
-    if (current.operation !== "update") return next;
+    if (current.operation !== "update") return { ...next, operation: current.operation };
     return {
         ...next,
         operation: "update",

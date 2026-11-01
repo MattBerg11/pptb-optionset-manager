@@ -8,7 +8,6 @@ import type {
   LanguageEntry,
   OptionDraftRow,
   OptionSetDraft,
-  OptionSetOperation,
   OptionSetScope,
 } from "../models/optionSetModels";
 import { createRowId } from "../utils/createRowId";
@@ -26,25 +25,12 @@ function normalizeScope(value: string | undefined): OptionSetScope {
   return value?.toLowerCase() === "local" ? "local" : "global";
 }
 
-function normalizeOperation(value: string | undefined): OptionSetOperation {
-  const normalized = value?.toLowerCase();
-  if (
-    normalized === "create" ||
-    normalized === "update" ||
-    normalized === "upsert"
-  ) {
-    return normalized;
-  }
-
-  return "upsert";
-}
-
 function createBaseDraft(
   defaultLanguageCode: number = DEFAULT_LANGUAGE_CODE,
 ): OptionSetDraft {
   return {
     scope: "global",
-    operation: "upsert",
+    operation: "create",
     optionSetSchemaName: "",
     displayName: "",
     description: "",
@@ -164,7 +150,6 @@ function mapJsonToDraft(
   const draft = createBaseDraft(defaultLanguageCode);
 
   draft.scope = normalizeScope(shape.scope);
-  draft.operation = normalizeOperation(shape.operation);
   draft.optionSetSchemaName = shape.optionSetSchemaName ?? "";
   draft.displayName = shape.displayName ?? "";
   draft.description = shape.description ?? "";

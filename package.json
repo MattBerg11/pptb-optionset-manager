@@ -1,6 +1,6 @@
 {
     "name": "pptb-optionset-manager",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "type": "module",
     "displayName": "OptionSet Manager",
     "description": "Create and edit Dataverse global choices and edit the options of local choice columns, with multi-language labels, a review step before saving, and CSV/JSON import and export.",
@@ -24,7 +24,7 @@
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/mattberg11/pptb-optionset-manager.git"
+        "url": "https://github.com/MattBerg11/pptb-optionset-manager.git"
     },
     "engines": {
         "node": ">=18.0.0"
@@ -54,7 +54,6 @@
     },
     "dependencies": {
         "@codemirror/commands": "^6.11.0",
-        "@codemirror/lang-javascript": "^6.2.5",
         "@codemirror/lang-json": "^6.0.2",
         "@codemirror/language": "^6.12.4",
         "@codemirror/state": "^6.7.1",

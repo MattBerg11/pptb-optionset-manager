@@ -13,7 +13,6 @@ interface BuilderTabProps {
     onRemoveRow: (rowId: string) => void;
     onUpdateRow: (rowId: string, updater: (row: OptionDraftRow) => OptionDraftRow) => void;
     onReorderRows: (fromIndex: number, toIndex: number) => void;
-    onApplyOrder?: () => Promise<void>;
     validationIssues: ValidationIssue[];
     sortLanguagesByCode: boolean;
     hasValidated: boolean;
@@ -42,7 +41,6 @@ export function BuilderTab({
     onRemoveRow,
     onUpdateRow,
     onReorderRows,
-    onApplyOrder,
     validationIssues,
     sortLanguagesByCode,
     hasValidated,
@@ -89,8 +87,6 @@ export function BuilderTab({
             onRemoveRow={onRemoveRow}
             onUpdateRow={onUpdateRow}
             onReorderRows={onReorderRows}
-            onApplyOrder={onApplyOrder}
-            isLoaded={isLoaded}
             validationIssues={validationIssues}
             sortLanguagesByCode={sortLanguagesByCode}
             hasValidated={hasValidated}

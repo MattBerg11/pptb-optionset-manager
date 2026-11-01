@@ -1,5 +1,7 @@
 import { Badge, Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, makeStyles, tokens } from "@fluentui/react-components";
 import { ArrowUndoRegular } from "@fluentui/react-icons";
+import type { ReactNode } from "react";
+import { isStateColumn } from "../../models/optionSetModels";
 import type { OptionSetDraft } from "../../models/optionSetModels";
 import type { ChangeSet, RowChange, RowChangeKind } from "../../utils/changeSet";
 
@@ -65,8 +67,11 @@ const useStyles = makeStyles({
     empty: {
         color: tokens.colorNeutralForeground3,
     },
-    environment: {
-        marginBottom: tokens.spacingVerticalS,
+    scope: {
+        display: "flex",
+        flexDirection: "column",
+        gap: tokens.spacingVerticalXXS,
+        marginBottom: tokens.spacingVerticalM,
         overflowWrap: "anywhere",
     },
     production: {
@@ -86,7 +91,7 @@ const BADGE: Record<RowChangeKind, { label: string; color: "success" | "warning"
     removed: { label: "Delete", color: "danger" },
 };
 
-type ReviewDraft = Pick<OptionSetDraft, "scope" | "operation" | "optionSetSchemaName" | "displayName" | "solutionUniqueName" | "entityLogicalName" | "attributeLogicalName">;
+type ReviewDraft = Pick<OptionSetDraft, "scope" | "operation" | "optionSetSchemaName" | "displayName" | "solutionUniqueName" | "entityLogicalName" | "attributeLogicalName" | "attributeType">;
 
 interface SaveReviewDialogProps {
     open: boolean;
@@ -94,6 +99,8 @@ interface SaveReviewDialogProps {
     changeSet: ChangeSet;
     /** The connection the save goes to, named in the dialog so the target environment is confirmed too. */
     connection: Pick<ToolBoxAPI.DataverseConnection, "name" | "url" | "environment"> | null;
+    /** Display name of the table a local choice belongs to; the draft only holds its logical name. */
+    entityDisplayName?: string | null;
     onRevertRow: (rowId: string) => void;
     onRestoreRow: (optionValue: number) => void;
     onRevertOrder: () => void;
@@ -102,28 +109,29 @@ interface SaveReviewDialogProps {
     onCancel: () => void;
 }
 
-function describeTarget(draft: ReviewDraft): string {
-    if (draft.scope === "local") return `${draft.entityLogicalName}.${draft.attributeLogicalName}`;
-    return `"${draft.optionSetSchemaName || draft.displayName}"`;
+// A new set always lands in the Default Solution, and UpdateStateValue takes no solution
+function solutionOf(draft: ReviewDraft): string | null {
+    if (draft.solutionUniqueName) return isStateColumn(draft) ? null : draft.solutionUniqueName;
+    return draft.operation === "update" ? null : "Default Solution only";
 }
 
-export function SaveReviewDialog({ open, draft, changeSet, connection, onRevertRow, onRestoreRow, onRevertOrder, onRevertProperties, onConfirm, onCancel }: SaveReviewDialogProps): JSX.Element {
+function ScopeRow({ label, name, detail, children }: { label: string; name: string; detail?: string; children?: ReactNode }): JSX.Element {
+    return (
+        <div>
+            {label}: <strong>{name}</strong>
+            {detail && ` (${detail})`}
+            {children}
+        </div>
+    );
+}
+
+export function SaveReviewDialog({ open, draft, changeSet, connection, entityDisplayName, onRevertRow, onRestoreRow, onRevertOrder, onRevertProperties, onConfirm, onCancel }: SaveReviewDialogProps): JSX.Element {
     const styles = useStyles();
     const isUpdate = draft.operation === "update";
+    const isLocal = draft.scope === "local";
     const propertiesChanged = changeSet.propertyDetails.length > 0;
     const total = changeSet.changes.length + (changeSet.orderChanged ? 1 : 0) + (propertiesChanged ? 1 : 0);
-
-    const summary = isUpdate
-        ? `Changes to ${describeTarget(draft)} in Dataverse: ${[
-              propertiesChanged ? "details changed" : null,
-              changeSet.added > 0 ? `${changeSet.added} added` : null,
-              changeSet.modified > 0 ? `${changeSet.modified} updated` : null,
-              changeSet.removed > 0 ? `${changeSet.removed} deleted` : null,
-              changeSet.orderChanged ? "order changed" : null,
-          ]
-              .filter(Boolean)
-              .join(" · ")}`
-        : `A new global option set ${describeTarget(draft)} will be created${draft.solutionUniqueName ? ` in solution "${draft.solutionUniqueName}"` : " in the Default Solution only"} with ${changeSet.added} option${changeSet.added === 1 ? "" : "s"}.`;
+    const solution = solutionOf(draft);
 
     const revert = (change: RowChange): void => {
         if (change.kind === "removed" && change.optionValue !== undefined) onRestoreRow(change.optionValue);
@@ -136,13 +144,27 @@ export function SaveReviewDialog({ open, draft, changeSet, connection, onRevertR
                 <DialogBody>
                     <DialogTitle>Review changes</DialogTitle>
                     <DialogContent>
-                        {connection && (
-                            <div className={styles.environment}>
-                                Environment: <strong>{connection.name}</strong> ({connection.url})
-                                {connection.environment === "Production" && <span className={styles.production}> · Production</span>}
-                            </div>
-                        )}
-                        <div className={styles.summary}>{summary}</div>
+                        <div className={styles.scope}>
+                            {connection && (
+                                <ScopeRow label="Environment" name={connection.name} detail={connection.url}>
+                                    {connection.environment === "Production" && <span className={styles.production}> · Production</span>}
+                                </ScopeRow>
+                            )}
+                            {total > 0 && (
+                                <>
+                                    {isLocal && <ScopeRow label="Attribute" name={draft.displayName} detail={draft.attributeLogicalName} />}
+                                    {isLocal ? (
+                                        <ScopeRow label="Published Entity" name={entityDisplayName || draft.entityLogicalName} detail={entityDisplayName ? draft.entityLogicalName : undefined}>
+                                            <div className={styles.detail}>Publishing a table also publishes any other unpublished changes on that table.</div>
+                                        </ScopeRow>
+                                    ) : (
+                                        <ScopeRow label="Published Entity" name={draft.displayName} detail={draft.optionSetSchemaName} />
+                                    )}
+                                    {solution && <ScopeRow label="Solution" name={solution} />}
+                                </>
+                            )}
+                        </div>
+                        {!isUpdate && total > 0 && <div className={styles.summary}>A new global option set will be created with {changeSet.added} option{changeSet.added === 1 ? "" : "s"}.</div>}
 
                         {total === 0 ? (
                             <div className={styles.empty}>No pending changes.</div>
@@ -212,7 +234,7 @@ export function SaveReviewDialog({ open, draft, changeSet, connection, onRevertR
                     </DialogContent>
                     <DialogActions>
                         <Button appearance="primary" onClick={onConfirm} disabled={total === 0}>
-                            {isUpdate ? `Save ${total} change${total === 1 ? "" : "s"}` : "Create option set"}
+                            {isUpdate ? `Publish ${total} change${total === 1 ? "" : "s"}` : "Create and publish"}
                         </Button>
                         <Button onClick={onCancel}>Cancel</Button>
                     </DialogActions>

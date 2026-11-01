@@ -1,5 +1,5 @@
 export type OptionSetScope = "global" | "local";
-export type OptionSetOperation = "create" | "update" | "upsert";
+export type OptionSetOperation = "create" | "update";
 
 export interface LanguageEntry {
     languageCode: number;
