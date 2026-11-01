@@ -98,7 +98,7 @@ interface SaveReviewDialogProps {
     draft: ReviewDraft;
     changeSet: ChangeSet;
     /** The connection the save goes to, named in the dialog so the target environment is confirmed too. */
-    connection: Pick<ToolBoxAPI.DataverseConnection, "name" | "url" | "environment"> | null;
+    connection: Pick<ToolBoxAPI.Connection, "name" | "url" | "environment"> | null;
     /** Display name of the table a local choice belongs to; the draft only holds its logical name. */
     entityDisplayName?: string | null;
     onRevertRow: (rowId: string) => void;

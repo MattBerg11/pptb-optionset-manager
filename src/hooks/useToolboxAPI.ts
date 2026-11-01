@@ -7,12 +7,12 @@ export interface LogEntry {
 }
 
 export function useConnection(): {
-  connection: ToolBoxAPI.DataverseConnection | null;
+  connection: ToolBoxAPI.Connection | null;
   isLoading: boolean;
   refreshConnection: () => Promise<void>;
 } {
   const [connection, setConnection] =
-    useState<ToolBoxAPI.DataverseConnection | null>(null);
+    useState<ToolBoxAPI.Connection | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const refreshConnection = useCallback(async () => {

@@ -99,7 +99,7 @@ export interface SidebarPanelProps {
     hasUnsavedChanges: boolean;
 
     // Connection
-    connection: ToolBoxAPI.DataverseConnection | null;
+    connection: ToolBoxAPI.Connection | null;
     isLoading: boolean;
 
     // Settings

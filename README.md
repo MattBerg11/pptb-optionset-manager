@@ -18,7 +18,7 @@ A [Power Platform ToolBox](https://powerplatformtoolbox.com) tool for creating a
 
 ## Requirements
 
-- [Power Platform ToolBox](https://powerplatformtoolbox.com) desktop app
+- [Power Platform ToolBox](https://powerplatformtoolbox.com) desktop app, version 1.2.7 or later
 - An active Dataverse connection
 - System Customizer or System Administrator security role
 
@@ -42,8 +42,8 @@ Nothing is written to Dataverse until you click **Review & Publish** and confirm
 - **Status columns**: Dataverse fixes these values for each table, so only their labels, descriptions and default status reason can change. Managed Status columns can't be changed.
 - **Changed option values**: the option is created with the new value and the old one is deleted. Records are not updated: records that stored the old value, or a deleted option's value, keep that number, which no longer has a label.
 - **Solutions**: a solution is optional. Dataverse puts every new global choice in the Default Solution; with an unmanaged solution selected, the new choice and any choice or column you change are added to that solution too. Status changes are the exception, because the Dataverse action takes no solution.
-- **Saving**:  you are presented with a detailed review page to tell you exactly what is being changed.
-- **Publishing**: uses the `PublishXmlRequest` to save the specific entity that is being modified. For a local choice, its table is published, which also publishes any other unpublished changes on that table even if they were done outside of this tool.
+- **Review**: every save opens a review of each change, the target environment and the solution before anything is written.
+- **Publishing**: after saving, the tool publishes only what it changed using the `PublishXmlRequest` command: the global choice by name, or the table of a local choice. Publishing a table also publishes any other unpublished changes on it, including ones made outside this tool.
 - **Files**: export writes a file only where you choose to save it.
 
 It doesn't change records, tables, forms, views or security, or any column other than the options of the one you load.

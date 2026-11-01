@@ -19,6 +19,10 @@
         "repository": "https://github.com/mattberg11/pptb-optionset-manager",
         "readmeUrl": "https://raw.githubusercontent.com/mattberg11/pptb-optionset-manager/refs/heads/main/README.md"
     },
+    "features": {
+        "connections": 1,
+        "minAPI": "1.2.7"
+    },
     "bugs": {
         "url": "https://github.com/mattberg11/pptb-optionset-manager/issues"
     },
@@ -67,7 +71,7 @@
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
-        "@pptb/types": "^1.2.0",
+        "@pptb/types": "^1.2.7",
         "@types/react": "^18.3.12",
         "@types/react-dom": "^18.3.1",
         "@vitejs/plugin-react": "^4.7.0",

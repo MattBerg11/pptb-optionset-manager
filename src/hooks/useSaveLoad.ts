@@ -98,7 +98,7 @@ function describeFailures(draft: OptionSetDraft, failedRows: OperationResultRow[
 export function useSaveLoad(
     draft: OptionSetDraft,
     issues: ValidationIssue[],
-    connection: ToolBoxAPI.DataverseConnection | null,
+    connection: ToolBoxAPI.Connection | null,
     dirtyRowIds: ReadonlySet<string>,
     loadedOptionValues: ReadonlySet<number>,
     baselineRows: readonly OptionDraftRow[],
@@ -126,6 +126,10 @@ export function useSaveLoad(
     actionsRef.current = actions;
     const callbacksRef = useRef(callbacks);
     callbacksRef.current = callbacks;
+    const connectionRef = useRef(connection);
+    connectionRef.current = connection;
+    // The connection the loaded choice was read from (or last saved to), so it is never saved into another environment
+    const loadedConnectionIdRef = useRef<string | null>(null);
 
     const hasBlockingErrors = issues.some((issue) => issue.severity === "error");
     const isSaveable = draft.scope === "global" || (draft.scope === "local" && draft.operation === "update" && !!draft.entityLogicalName && !!draft.attributeLogicalName && !draft.globalOptionSetName);
@@ -140,9 +144,12 @@ export function useSaveLoad(
         setState((prev) => ({ ...prev, status: "saving", error: null }));
         setProgress({ open: true, finished: false, steps: [] });
         const reportStep = (step: SaveStep): void => setProgress((prev) => ({ ...prev, steps: applyStep(prev.steps, step) }));
+        const savedToConnectionId = connectionRef.current?.id ?? null;
 
         try {
             const result = await upsertOptionSet(draft, dirtyRowIds, loadedOptionValues, baselineRows, reportStep, baselineProperties);
+            // Whatever got through now exists in this environment, so later saves belong here
+            loadedConnectionIdRef.current = savedToConnectionId;
             // Record what did get through (created values, deletions) so a retry only sends what is still outstanding
             actionsRef.current.applySaveResult(result.rows);
 
@@ -209,8 +216,23 @@ export function useSaveLoad(
         }
     }, [draft, dirtyRowIds, loadedOptionValues, baselineRows, baselineProperties, metadataService, notify]);
 
+    const failBeforeSave = useCallback(
+        (errorMessage: string) => {
+            setState((prev) => ({ ...prev, status: "error", error: errorMessage, successMessage: null }));
+            notify("Save Error", errorMessage, "error", 5000);
+        },
+        [notify]
+    );
+
     const handleSave = useCallback(async () => {
         if (!canSave) {
+            return;
+        }
+        const name = draft.displayName || draft.optionSetSchemaName;
+
+        // A loaded choice and its baseline came from one environment; saving them into another would apply the wrong changes
+        if (draft.operation === "update" && loadedConnectionIdRef.current && connection && connection.id !== loadedConnectionIdRef.current) {
+            failBeforeSave(`The connection changed after "${name}" was loaded, so nothing was saved. Load it again from this environment before saving.`);
             return;
         }
 
@@ -225,13 +247,17 @@ export function useSaveLoad(
                     setState((prev) => ({ ...prev, conflictDialog: { open: true, addedRemotely, removedRemotely } }));
                     return;
                 }
-            } catch {
-                // If the conflict check fails, proceed with save
+            } catch (error) {
+                // Fail closed: without a fresh read there is no way to know what the writes would overwrite
+                console.error("[SaveLoad] Pre-save check failed:", error);
+                const detail = error instanceof Error ? ` ${error.message}` : "";
+                failBeforeSave(`Couldn't re-check "${name}" in Dataverse before saving, so nothing was saved.${detail}`);
+                return;
             }
         }
 
         await doUpsert();
-    }, [canSave, draft, loadedOptionValues, metadataService, doUpsert]);
+    }, [canSave, connection, draft, loadedOptionValues, metadataService, doUpsert, failBeforeSave]);
 
     const confirmOverwrite = useCallback(() => {
         setState((prev) => ({ ...prev, conflictDialog: { ...NO_CONFLICT } }));
@@ -268,6 +294,7 @@ export function useSaveLoad(
                     rows,
                     operation: "update",
                 });
+                loadedConnectionIdRef.current = connectionRef.current?.id ?? null;
 
                 const successMessage = `Loaded "${detail.DisplayName}" with ${rows.length} options`;
                 if (DEBUG) console.log(`[SaveLoad] Load successful - ${successMessage}`);
@@ -319,6 +346,7 @@ export function useSaveLoad(
                     rows,
                     operation: "update",
                 });
+                loadedConnectionIdRef.current = connectionRef.current?.id ?? null;
 
                 const successMessage = boundGlobalName
                     ? `Loaded "${detail.attributeDisplayName}" with ${rows.length} options. This column uses the global choice "${boundGlobalName}", so it can only be edited on the Global tab.`
