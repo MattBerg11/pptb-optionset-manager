@@ -3,6 +3,7 @@ import type { DataverseMetadataService } from "../services/dataverseMetadataServ
 import type { GlobalOptionSetDetail, LocalChoiceDetail, OperationResultRow, OptionDraftRow, OptionSetDraft, OptionSetProperties, SaveLoadState, SaveStep, ValidationIssue } from "../models/optionSetModels";
 import { upsertOptionSet } from "../services/dataverseOptionSetService";
 import type { ApplyDraftOptions } from "./useOptionSetBuilder";
+import { toLogicalName } from "../utils/deriveEntityName";
 import { extractDescription, optionsToRows } from "../utils/optionRows";
 import { retryWithDelays } from "../utils/retry";
 
@@ -204,7 +205,7 @@ export function useSaveLoad(
             // After the reload, so the sidebar's list is read once the new set can be found
             if (wasCreated) {
                 metadataService.invalidateGlobalOptionSets();
-                callbacksRef.current?.onGlobalOptionSetsChanged?.(draft.optionSetSchemaName);
+                callbacksRef.current?.onGlobalOptionSetsChanged?.(toLogicalName(draft.optionSetSchemaName));
             }
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "Failed to save option set";

@@ -3,6 +3,7 @@ import { OptionSetOperationError } from "../models/optionSetErrors";
 import { isStateColumn, isStatusColumn } from "../models/optionSetModels";
 import type { OptionDraftRow, OptionSetDraft, OptionSetOperationResult, OptionSetProperties, SaveStepReporter } from "../models/optionSetModels";
 import { changedProperties } from "../utils/changeSet";
+import { globalOptionSetPath, toLogicalName } from "../utils/deriveEntityName";
 import { assignOptionValues } from "../utils/optionValues";
 
 // Returns a plain serializable Label object; avoids non-cloneable PPTB-internal objects from buildLabel().
@@ -116,7 +117,7 @@ type TargetDraft = Pick<OptionSetDraft, "scope" | "optionSetSchemaName" | "entit
 // Global sets are addressed by name. A local column backed by a global choice must be edited through that global set.
 function targetParams(draft: TargetDraft): Record<string, unknown> {
     const optionSetName = draft.scope === "global" ? draft.optionSetSchemaName : draft.globalOptionSetName;
-    if (optionSetName) return { OptionSetName: optionSetName };
+    if (optionSetName) return { OptionSetName: toLogicalName(optionSetName) };
     return { EntityLogicalName: draft.entityLogicalName, AttributeLogicalName: draft.attributeLogicalName };
 }
 
@@ -136,13 +137,13 @@ export async function publishDraftTarget(draft: TargetDraft): Promise<void> {
     await window.dataverseAPI.execute({
         operationName: "PublishXml",
         operationType: "action",
-        parameters: { ParameterXml: `<importexportxml>${entities}<optionsets><optionset>${xmlEscape(optionSetName)}</optionset></optionsets></importexportxml>` },
+        parameters: { ParameterXml: `<importexportxml>${entities}<optionsets><optionset>${xmlEscape(toLogicalName(optionSetName))}</optionset></optionsets></importexportxml>` },
     });
 }
 
 async function globalOptionSetExists(name: string): Promise<boolean> {
     try {
-        await window.dataverseAPI.queryData(`GlobalOptionSetDefinitions(Name='${name.replace(/'/g, "''")}')`);
+        await window.dataverseAPI.queryData(globalOptionSetPath(name));
         return true;
     } catch {
         return false;
@@ -158,7 +159,7 @@ async function updateGlobalOptionSetProperties(
     changed: { displayName: boolean; description: boolean },
     solutionOptions: { solutionUniqueName: string } | undefined
 ): Promise<void> {
-    const current = (await window.dataverseAPI.queryData(`GlobalOptionSetDefinitions(Name='${draft.optionSetSchemaName.replace(/'/g, "''")}')`)) as unknown as Record<string, unknown>;
+    const current = (await window.dataverseAPI.queryData(globalOptionSetPath(draft.optionSetSchemaName))) as unknown as Record<string, unknown>;
     const metadataId = current["MetadataId"];
     if (typeof metadataId !== "string") {
         throw new OptionSetOperationError(`Could not read option set "${draft.optionSetSchemaName}" to update its details.`, "UpdateOptionSet");

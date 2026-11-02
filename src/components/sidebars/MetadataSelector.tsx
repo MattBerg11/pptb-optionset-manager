@@ -32,6 +32,7 @@ import type { DataverseMetadataService } from "../../services/dataverseMetadataS
 import type { MetadataSelection } from "../../models/metadataModels";
 import type { GlobalOptionSetDetail, LocalChoiceDetail, OptionSetOperation, OptionSetScope } from "../../models/optionSetModels";
 import { useMetadataData } from "../../hooks/useMetadataData";
+import { toLogicalName } from "../../utils/deriveEntityName";
 
 const useStyles = makeStyles({
     root: {
@@ -326,7 +327,7 @@ export function MetadataSelector({
         });
 
     const selectedOptionSetDisplay = selection.selectedGlobalOptionSetName
-        ? globalOptionSets.find((os) => os.Name === selection.selectedGlobalOptionSetName)?.DisplayName || selection.selectedGlobalOptionSetName
+        ? globalOptionSets.find((os) => toLogicalName(os.Name) === toLogicalName(selection.selectedGlobalOptionSetName ?? ""))?.DisplayName || selection.selectedGlobalOptionSetName
         : "";
 
     // Driven by the sidebar's mode (browsing / editing an existing set vs. authoring a new one), not by what has been typed

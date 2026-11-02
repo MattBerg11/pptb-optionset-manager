@@ -24,7 +24,7 @@ import { useEnvironmentLanguages } from "../hooks/useEnvironmentLanguages";
 import { useDefaultLanguageSync } from "../hooks/useDefaultLanguageSync";
 import { useImportWarningNotification } from "../hooks/useImportWarningNotification";
 import { useAutoSchemaName } from "../hooks/useAutoSchemaName";
-import { deriveSchemaName } from "../utils/deriveSchemaName";
+import { deriveEntityName } from "../utils/deriveEntityName";
 
 const useStyles = makeStyles({
     root: {
@@ -492,7 +492,7 @@ export function App(): JSX.Element {
             setDisplayNameDirty(true);
             actions.setField("displayName", value);
             if (!schemaNameManuallyEdited && state.draft.publisherPrefix && state.draft.operation !== "update") {
-                actions.setField("optionSetSchemaName", deriveSchemaName(state.draft.publisherPrefix, value));
+                actions.setField("optionSetSchemaName", deriveEntityName(state.draft.publisherPrefix, value));
             }
         },
         [actions, schemaNameManuallyEdited, state.draft.publisherPrefix, state.draft.operation, setDisplayNameDirty]

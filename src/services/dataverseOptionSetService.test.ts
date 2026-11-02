@@ -277,6 +277,21 @@ describe("upsertOptionSet: option order goes through the save", () => {
     });
 });
 
+describe("upsertOptionSet: a global option set with a mixed case schema name", () => {
+    const named = (rows: OptionDraftRow[]): OptionSetDraft => ({ ...draft(rows), optionSetSchemaName: "new_Status" });
+
+    it("addresses option changes by the logical name", async () => {
+        await upsertOptionSet(named([{ rowId: "new", labels: [{ languageCode: EN, label: "New" }] }]), new Set(["new"]), new Set(), []);
+        expect(api.insertOptionValue).toHaveBeenCalledWith(expect.objectContaining({ OptionSetName: "new_status" }));
+    });
+
+    it("reads the definition by the logical name before updating its details", async () => {
+        api.queryData.mockResolvedValueOnce({ MetadataId: "id-1" } as never);
+        await upsertOptionSet({ ...named([loaded]), displayName: "Project status" }, new Set(), new Set([loaded.optionValue!]), [loaded], undefined, { displayName: "Status", description: "" });
+        expect(api.queryData).toHaveBeenCalledWith("GlobalOptionSetDefinitions(Name='new_status')");
+    });
+});
+
 describe("upsertOptionSet: creating a global option set", () => {
     const row: OptionDraftRow = { rowId: "new", labels: [{ languageCode: EN, label: "New" }] };
 
@@ -306,6 +321,16 @@ describe("upsertOptionSet: creating a global option set", () => {
         expect(api.execute).toHaveBeenCalledTimes(1);
         expect(result.summary).toMatchObject({ created: 2, failed: 0 });
         expect(result.rows).toContainEqual(expect.objectContaining({ rowId: "new", status: "created", optionValue: 100000006 }));
+    });
+
+    it("sends the schema name as entered but checks and publishes by the logical name", async () => {
+        nameIsFree();
+        await upsertOptionSet({ ...draft([row]), operation: "create", optionSetSchemaName: "new_Status" });
+
+        expect(api.queryData).toHaveBeenCalledWith("GlobalOptionSetDefinitions(Name='new_status')");
+        expect(definition().Name).toBe("new_Status");
+        const publish = (api.execute.mock.calls[0] as unknown as [{ parameters: { ParameterXml: string } }])[0];
+        expect(publish.parameters.ParameterXml).toContain("<optionset>new_status</optionset>");
     });
 
     it("sends every field of a new option, leaving out what is empty", async () => {

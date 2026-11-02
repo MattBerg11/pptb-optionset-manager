@@ -28,6 +28,18 @@ describe("getEnvironmentId", () => {
     });
 });
 
+describe("getGlobalOptionSetDetail", () => {
+    it("loads a set by its logical name and returns the name Dataverse gives back", async () => {
+        const queryData = vi.fn(async () => ({ Name: "new_status", Options: [] }));
+        const service = new DataverseMetadataService({ queryData } as unknown as DataverseAPI.API);
+
+        const detail = await service.getGlobalOptionSetDetail("new_Status");
+
+        expect(queryData).toHaveBeenCalledWith("GlobalOptionSetDefinitions(Name='new_status')");
+        expect(detail.Name).toBe("new_status");
+    });
+});
+
 describe("getLocalChoiceOptions: attributeType", () => {
     it.each(["Picklist", "MultiSelectPicklist", "State", "Status"])("reports a %s column as that type", async (type) => {
         const detail = await serviceFor(type).getLocalChoiceOptions("account", "col", "Col");

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { OptionSetDraft } from "../models/optionSetModels";
-import { deriveSchemaName } from "../utils/deriveSchemaName";
+import { deriveEntityName } from "../utils/deriveEntityName";
 
 export function useAutoSchemaName(
     draft: Pick<OptionSetDraft, "operation" | "publisherPrefix" | "displayName" | "optionSetSchemaName">,
@@ -15,7 +15,7 @@ export function useAutoSchemaName(
         if (draft.operation === "update") return;
         if (!draft.publisherPrefix || !draft.displayName || schemaNameManuallyEdited) return;
         if (!draft.optionSetSchemaName.startsWith(`${draft.publisherPrefix}_`)) {
-            setSchemaNameRef.current(deriveSchemaName(draft.publisherPrefix, draft.displayName));
+            setSchemaNameRef.current(deriveEntityName(draft.publisherPrefix, draft.displayName));
         }
     }, [draft.operation, draft.publisherPrefix, draft.displayName, draft.optionSetSchemaName, schemaNameManuallyEdited]);
 }
