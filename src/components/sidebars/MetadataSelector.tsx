@@ -254,7 +254,7 @@ export function MetadataSelector({
                 .getLocalChoiceOptions(selection.entityLogicalName, attributeLogicalName, attribute.displayName)
                 .then((detail) => {
                     if (guard.cancelled) return;
-                    onLocalChoiceLoaded(detail);
+                    onLocalChoiceLoaded({ ...detail, attributeSchemaName: attribute.schemaName });
                 })
                 .catch((err: unknown) => {
                     if (!guard.cancelled) setFieldError("attributes", err instanceof Error ? err.message : "Failed to load choice options");

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OptionDraftRow, OptionSetDraft } from "../models/optionSetModels";
+import { serializeDraftToCode } from "./codeGenerationService";
 import { publishDraftTarget, upsertOptionSet } from "./dataverseOptionSetService";
 
 const EN = 1033;
@@ -321,6 +322,15 @@ describe("upsertOptionSet: creating a global option set", () => {
         expect(api.execute).toHaveBeenCalledTimes(1);
         expect(result.summary).toMatchObject({ created: 2, failed: 0 });
         expect(result.rows).toContainEqual(expect.objectContaining({ rowId: "new", status: "created", optionValue: 100000006 }));
+    });
+
+    it("sends exactly what the JSON tab shows", async () => {
+        nameIsFree();
+        const newSet: OptionSetDraft = { ...draft([row]), operation: "create", solutionUniqueName: "contoso" };
+        await upsertOptionSet(newSet);
+
+        expect(JSON.parse(JSON.stringify(definition()))).toEqual(JSON.parse(serializeDraftToCode(newSet)));
+        expect(api.createGlobalOptionSet).toHaveBeenCalledWith(expect.anything(), { solutionUniqueName: "contoso" });
     });
 
     it("sends the schema name as entered but checks and publishes by the logical name", async () => {

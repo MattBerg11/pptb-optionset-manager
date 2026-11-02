@@ -64,7 +64,7 @@ export function OptionSetPropertiesForm({ draft, readOnly = false, getFieldError
                     <InfoLabel htmlFor="sidebar-schemaName" size="medium" info="The logical name of the selected column.">
                         Logical Name
                     </InfoLabel>
-                    <Input id="sidebar-schemaName" size="small" appearance="filled-lighter" value={draft.optionSetSchemaName} readOnly />
+                    <Input id="sidebar-schemaName" size="small" appearance="filled-lighter" value={draft.attributeLogicalName} readOnly />
                 </div>
                 <span className={styles.fieldHint}>
                     {draft.globalOptionSetName ? `Uses the global choice "${draft.globalOptionSetName}". Its options are edited on the Global tab.` : "Column properties are read-only here; only its options can be edited."}
@@ -97,8 +97,12 @@ export function OptionSetPropertiesForm({ draft, readOnly = false, getFieldError
             </div>
 
             <div className={styles.field}>
-                <InfoLabel htmlFor="sidebar-schemaName" size="medium" info="The unique technical name used in code and APIs. Must start with publisher prefix. Cannot be changed after creation.">
-                    Schema Name
+                <InfoLabel
+                    htmlFor="sidebar-schemaName"
+                    size="medium"
+                    info={schemaLocked ? "The name Dataverse uses for this option set. Cannot be changed." : "The unique technical name used in code and APIs. Must start with publisher prefix. Cannot be changed after creation."}
+                >
+                    {schemaLocked ? "Logical Name" : "Schema Name"}
                 </InfoLabel>
                 <Input
                     id="sidebar-schemaName"
@@ -113,7 +117,7 @@ export function OptionSetPropertiesForm({ draft, readOnly = false, getFieldError
                     aria-invalid={!schemaLocked && !!getFieldError("optionSetSchemaName")}
                     aria-describedby={!schemaLocked && getFieldError("optionSetSchemaName") ? "err-schemaName" : undefined}
                 />
-                {schemaLocked && <span className={styles.fieldHint}>Schema name is read-only after creation</span>}
+                {schemaLocked && <span className={styles.fieldHint}>Logical name is read-only after creation</span>}
                 {!schemaLocked && getFieldError("optionSetSchemaName") && (
                     <span id="err-schemaName" className={styles.fieldError} role="alert">
                         {getFieldError("optionSetSchemaName")}

@@ -341,7 +341,7 @@ export function useSaveLoad(
                     globalOptionSetName: boundGlobalName,
                     attributeType: detail.attributeType,
                     relatedOptions: detail.relatedOptions,
-                    optionSetSchemaName: detail.attributeLogicalName,
+                    optionSetSchemaName: detail.attributeSchemaName ?? detail.attributeLogicalName,
                     displayName: detail.attributeDisplayName,
                     description: "",
                     rows,

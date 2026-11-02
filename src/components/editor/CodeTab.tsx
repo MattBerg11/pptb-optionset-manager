@@ -138,7 +138,7 @@ function CodeMirrorEditor({ code, onChange, readOnly, language, lineNumbers: sho
 export type CodeFormat = "json" | "csv";
 
 const FORMATS: Record<CodeFormat, { label: string; hint: string }> = {
-    json: { label: "JSON", hint: "Editable. Apply to send your edits back to the Builder." },
+    json: { label: "JSON", hint: "The request sent to Dataverse. Editable. Apply to send your edits back to the Builder." },
     csv: { label: "CSV", hint: "Read-only. Edit options in the Builder tab." },
 };
 
@@ -328,7 +328,8 @@ export function CodeTab({ codeText, codeError, onCodeChange, draft, outputFormat
     const usesGlobalChoice = isGlobalChoiceColumn(draft);
     const isEditableMode = outputFormat === "json" && !usesGlobalChoice;
     const { label: formatLabel } = FORMATS[outputFormat];
-    const formatHint = usesGlobalChoice ? "Read-only. This column uses a global choice." : FORMATS[outputFormat].hint;
+    const loadedJsonHint = "JSON payload sent to Dataverse. Apply manual edits to send back to the Builder.";
+    const formatHint = usesGlobalChoice ? "Read-only. This column uses a global choice." : outputFormat === "json" && draft.operation === "update" ? loadedJsonHint : FORMATS[outputFormat].hint;
     const lineCount = displayedCode.length > 0 ? displayedCode.split(/\r?\n/).length : 0;
     const charCount = displayedCode.length;
     const editorAriaLabel = `Code editor, ${formatLabel}${isEditableMode ? "" : ", read-only"}`;

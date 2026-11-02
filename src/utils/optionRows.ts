@@ -19,7 +19,23 @@ export function optionsToRows(options: readonly OptionMetadata[]): OptionDraftRo
     }));
 }
 
+/** Rows from edited or imported Dataverse JSON, where a new option has a null Value and may have no label yet. */
+export function payloadOptionsToRows(options: readonly OptionMetadata[], defaultLanguageCode: number): OptionDraftRow[] {
+    return optionsToRows(options).map((row) => ({
+        ...row,
+        optionValue: row.optionValue ?? undefined,
+        labels: row.labels.length > 0 ? row.labels : [{ languageCode: defaultLanguageCode, label: "", description: "" }],
+    }));
+}
+
 type LabelLike = { UserLocalizedLabel?: { Label: string }; LocalizedLabels?: Array<{ Label: string }> } | string | undefined;
+
+/** Reads a label from edited or imported JSON. LocalizedLabels comes first: it's what is saved, and an edit may not touch UserLocalizedLabel. */
+export function extractPayloadLabel(raw: unknown): string {
+    const value = raw as LabelLike;
+    if (typeof value === "string") return value;
+    return value?.LocalizedLabels?.[0]?.Label ?? value?.UserLocalizedLabel?.Label ?? "";
+}
 
 /** Reads an option set's description, which Dataverse returns as a Label object (or occasionally a plain string). */
 export function extractDescription(raw: unknown): string {

@@ -1,4 +1,4 @@
-import type { OptionSetDraft } from "./optionSetModels";
+import type { OptionMetadata, OptionSetDraft } from "./optionSetModels";
 
 export interface ImportParseSuccess {
   draft: OptionSetDraft;
@@ -24,6 +24,14 @@ export interface JsonImportShape {
   entityLogicalName?: string;
   attributeLogicalName?: string;
   rows?: JsonImportRow[];
+  // The Dataverse payload the JSON tab exports
+  Name?: string;
+  SchemaName?: string;
+  DisplayName?: unknown;
+  Description?: unknown;
+  EntityLogicalName?: string;
+  AttributeLogicalName?: string;
+  Options?: OptionMetadata[];
 }
 
 export interface JsonImportRow {

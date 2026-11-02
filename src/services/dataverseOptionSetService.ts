@@ -70,15 +70,38 @@ function buildDescription(row: OptionDraftRow, defaultLanguageCode: number, clea
     };
 }
 
-// One entry of Options[] on a new global option set. A null Value lets Dataverse assign it.
-function newOptionMetadata(row: OptionDraftRow, value: number | undefined, defaultLanguageCode: number): Record<string, unknown> {
+// One entry of Options[]. A null Value lets Dataverse assign it.
+function optionMetadata(row: OptionDraftRow, value: number | undefined, defaultLanguageCode: number): Record<string, unknown> {
     const option: Record<string, unknown> = { Value: value ?? null, Label: buildLabel(row, defaultLanguageCode) };
     const description = buildDescription(row, defaultLanguageCode);
     if (description) option.Description = description;
     if (row.color) option.Color = row.color;
     if (row.externalKey) option.ExternalValue = row.externalKey;
     if (row.hidden !== undefined) option.IsHidden = row.hidden;
+    if (row.stateCode !== undefined) option.State = row.stateCode;
+    if (row.defaultStatusCode !== undefined) option.DefaultStatus = row.defaultStatusCode;
     return option;
+}
+
+// The create request's body, which the JSON tab shows as well. An existing set or a local column is saved with one
+// action per change, so for those this is the whole set in the same shape, not a request.
+export function optionSetPayload(draft: OptionSetDraft): Record<string, unknown> {
+    const isNew = draft.operation !== "update";
+    const assignedValues = isNew ? assignOptionValues(draft.rows, draft.optionValuePrefix) : new Map<string, number>();
+    const options = draft.rows.map((row) => optionMetadata(row, row.optionValue ?? assignedValues.get(row.rowId), draft.defaultLanguageCode));
+
+    if (draft.scope === "local") {
+        return { EntityLogicalName: draft.entityLogicalName, AttributeLogicalName: draft.attributeLogicalName, SchemaName: draft.optionSetSchemaName, Options: options };
+    }
+    return {
+        "@odata.type": "Microsoft.Dynamics.CRM.OptionSetMetadata",
+        Name: draft.optionSetSchemaName,
+        DisplayName: plainLabel(draft.displayName, draft.defaultLanguageCode),
+        Description: plainLabel(isNew ? draft.description || draft.displayName : draft.description, draft.defaultLanguageCode),
+        OptionSetType: "Picklist",
+        IsGlobal: true,
+        Options: options,
+    };
 }
 
 // What the user emptied on a loaded row. Omitted fields are left untouched by Dataverse, so clears must be sent explicitly.
@@ -227,18 +250,7 @@ export async function upsertOptionSet(
         const optionCount = `${draft.rows.length} ${draft.rows.length === 1 ? "option" : "options"}`;
         await runStep(`Creating option set "${draft.optionSetSchemaName}" with ${optionCount}`, async () => {
             try {
-                await window.dataverseAPI.createGlobalOptionSet(
-                    {
-                        "@odata.type": "Microsoft.Dynamics.CRM.OptionSetMetadata",
-                        Name: draft.optionSetSchemaName,
-                        DisplayName: plainLabel(draft.displayName, draft.defaultLanguageCode),
-                        Description: plainLabel(draft.description || draft.displayName, draft.defaultLanguageCode),
-                        OptionSetType: "Picklist",
-                        IsGlobal: true,
-                        Options: draft.rows.map((row) => newOptionMetadata(row, row.optionValue ?? assignedValues.get(row.rowId), draft.defaultLanguageCode)),
-                    },
-                    solutionOptions
-                );
+                await window.dataverseAPI.createGlobalOptionSet(optionSetPayload(draft), solutionOptions);
             } catch (createError) {
                 if (!isMissingEntityIdError(createError)) throw createError;
             }

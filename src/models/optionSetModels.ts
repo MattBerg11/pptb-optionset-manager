@@ -163,6 +163,7 @@ export interface LocalChoiceDetail {
     entityLogicalName: string;
     attributeLogicalName: string;
     attributeDisplayName: string;
+    attributeSchemaName?: string;
     options: OptionMetadata[];
     isGlobal?: boolean;
     optionSetName?: string;

@@ -246,17 +246,7 @@ export function useOptionSetBuilder(
     const syncFromCode = useCallback(() => {
         try {
             const current = draftRef.current;
-            const parsed = parseCodeToDraft(codeText);
-            const hydratedRows = parsed.rows.map((row) => ({
-                ...row,
-                rowId: row.rowId || createRowId(),
-            }));
-            const nextDraft = lockIdentity(current, {
-                ...parsed,
-                publisherPrefix: parsed.publisherPrefix || "",
-                optionValuePrefix: parsed.optionValuePrefix || 0,
-                rows: hydratedRows,
-            });
+            const nextDraft = lockIdentity(current, parseCodeToDraft(codeText, current));
             applyDraft(nextDraft, current.operation === "update" ? { preserveLoaded: true } : undefined);
             setCodeError(null);
         } catch (error) {

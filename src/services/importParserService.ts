@@ -11,6 +11,7 @@ import type {
   OptionSetScope,
 } from "../models/optionSetModels";
 import { createRowId } from "../utils/createRowId";
+import { extractPayloadLabel, payloadOptionsToRows } from "../utils/optionRows";
 
 function parseNumber(value: string | undefined): number | undefined {
   if (!value) {
@@ -150,15 +151,20 @@ function mapJsonToDraft(
   const draft = createBaseDraft(defaultLanguageCode);
 
   draft.scope = normalizeScope(shape.scope);
-  draft.optionSetSchemaName = shape.optionSetSchemaName ?? "";
-  draft.displayName = shape.displayName ?? "";
-  draft.description = shape.description ?? "";
+  draft.optionSetSchemaName = shape.optionSetSchemaName ?? shape.Name ?? shape.SchemaName ?? "";
+  draft.displayName = shape.displayName ?? extractPayloadLabel(shape.DisplayName);
+  draft.description = shape.description ?? extractPayloadLabel(shape.Description);
   draft.solutionUniqueName = shape.solutionUniqueName ?? "";
   draft.publisherPrefix = shape.publisherPrefix ?? "";
   draft.optionValuePrefix = shape.optionValuePrefix ?? 0;
   draft.defaultLanguageCode = shape.defaultLanguageCode ?? defaultLanguageCode;
-  draft.entityLogicalName = shape.entityLogicalName ?? "";
-  draft.attributeLogicalName = shape.attributeLogicalName ?? "";
+  draft.entityLogicalName = shape.entityLogicalName ?? shape.EntityLogicalName ?? "";
+  draft.attributeLogicalName = shape.attributeLogicalName ?? shape.AttributeLogicalName ?? "";
+
+  if (shape.Options) {
+    draft.rows = payloadOptionsToRows(shape.Options, draft.defaultLanguageCode);
+    return draft;
+  }
 
   draft.rows = (shape.rows ?? []).map((row) => {
     const labels: LanguageEntry[] = (row.labels ?? []).map((label) => ({
@@ -202,7 +208,7 @@ export function parseImportText(
           ok: false,
           warnings,
           errors: [
-            'No rows found. Provide an array of rows, or an object with a "rows" array.',
+            'No rows found. Provide an array of rows, or an object with a "rows" or "Options" array.',
           ],
         };
       }
