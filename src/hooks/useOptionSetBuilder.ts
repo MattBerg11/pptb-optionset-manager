@@ -5,7 +5,7 @@ import { EMPTY_METADATA_SELECTION, MetadataSelection } from "../models/metadataM
 import { isStatusColumn } from "../models/optionSetModels";
 import type { OperationResultRow, OptionDraftRow, OptionSetDraft, OptionSetProperties, PreviewSummary, ValidationIssue } from "../models/optionSetModels";
 import { parseCodeToDraft, serializeDraftToCode } from "../services/codeGenerationService";
-import { parseImportText } from "../services/importParserService";
+import { mergeImportedRows, parseImportText } from "../services/importParserService";
 import { type ChangeSet, computeChangeSet, describePropertyChanges } from "../utils/changeSet";
 import { createRowId } from "../utils/createRowId";
 import { validateOptionSetDraft } from "../utils/optionSetValidation";
@@ -289,24 +289,8 @@ export function useOptionSetBuilder(
             const warnings = [...result.warnings];
 
             if (current.operation === "update") {
-                // Importing into a loaded set merges by option value and never removes existing options.
-                const nextRows = [...current.rows];
-                for (const importedRow of imported.rows) {
-                    const existingIndex = importedRow.optionValue !== undefined ? nextRows.findIndex((row) => row.optionValue === importedRow.optionValue) : -1;
-                    if (existingIndex >= 0) {
-                        const existing = nextRows[existingIndex];
-                        const languages = new Set(importedRow.labels.map((label) => label.languageCode));
-                        nextRows[existingIndex] = {
-                            ...existing,
-                            externalKey: importedRow.externalKey || existing.externalKey,
-                            labels: [...existing.labels.filter((label) => !languages.has(label.languageCode)), ...importedRow.labels],
-                        };
-                    } else {
-                        nextRows.push(importedRow);
-                    }
-                }
-                applyDraft({ ...current, rows: nextRows }, { preserveLoaded: true });
-                warnings.push("Imported rows were merged into the loaded option set: rows with a matching value were updated, others were added, nothing was removed.");
+                applyDraft({ ...current, rows: mergeImportedRows(current.rows, imported.rows) }, { preserveLoaded: true });
+                warnings.push("Imported rows were merged into the loaded option set: rows with a matching value were updated, others were added, nothing was removed. Blank cells keep the loaded label or description.");
             } else {
                 // New option set: import supplies data only; whatever is already chosen in the sidebar stays.
                 applyDraft({

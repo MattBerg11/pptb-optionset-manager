@@ -104,8 +104,8 @@ export function ImportModal({ open, onClose, onImport, onClearWarnings, warnings
                                 onChange={(_, data) => setImportText(data.value)}
                                 placeholder={
                                     extension === "json"
-                                        ? '[\n  {"value": 100000000, "label": "Low", "description": "Low priority"},\n  {"value": 100000001, "label": "High"}\n]\n\n// Multi-language: {"labels": [{"languageCode": 1033, "label": "Low"}, {"languageCode": 1036, "label": "Faible"}]}\n// Omit "value" to let Dataverse assign one.'
-                                        : "value,label,description\n100000000,Low,Low priority\n100000001,High,\n\n// Multi-language columns: label_1033,label_1036,description_1033 …\n// Omit value to let Dataverse assign one."
+                                        ? '[\n  {"value": 100000000, "label": "Low", "description": "Low priority"},\n  {"value": 100000001, "label": "High"}\n]\n\n// Multi-language: {"labels": [{"languageCode": 1033, "label": "Low"}, {"languageCode": 1036, "label": "Faible"}]}\n// Optional per row: "externalKey", "color": "#0078d4", "hidden": true\n// Omit "value" to let Dataverse assign one.'
+                                        : "value,label,description\n100000000,Low,Low priority\n100000001,High,\n\n// Multi-language columns: label_1033,description_1033,label_1036,description_1036 …\n// Comma, semicolon or tab separated, so cells copied from Excel can be pasted.\n// Omit value to let Dataverse assign one."
                                 }
                                 rows={12}
                                 resize="vertical"

@@ -231,8 +231,10 @@ export function CodeTabActions({ codeText, draft, outputFormat, schemaName, onAp
 
     const handleExport = async (): Promise<void> => {
         const filename = `${schemaName || "optionset"}.${outputFormat}`;
+        const content = getDisplayedCode(outputFormat, draft, codeText);
         try {
-            const path = await window.toolboxAPI.fileSystem.saveFile(filename, getDisplayedCode(outputFormat, draft, codeText), [{ name: formatLabel, extensions: [outputFormat] }]);
+            // Without a byte order mark Excel reads a CSV in the local code page, which garbles accented and non-Latin labels
+            const path = await window.toolboxAPI.fileSystem.saveFile(filename, outputFormat === "csv" ? `\uFEFF${content}` : content, [{ name: formatLabel, extensions: [outputFormat] }]);
             if (path) {
                 await window.toolboxAPI.utils.showNotification({
                     title: "Exported",

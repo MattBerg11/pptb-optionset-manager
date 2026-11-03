@@ -14,7 +14,7 @@ A [Power Platform ToolBox](https://powerplatformtoolbox.com) tool for creating a
 - **All the options**: The ability to set the value, color, external value, and hidden flag. New values follow the publisher's option value prefix, and existing values can be changed.
 - **Reorder** options by dragging or with Alt+Up/Down. The new order is saved with your other changes.
 - **Review before saving**: See every insert, update, delete, and reorder before anything is sent, along with the environment and what will be published, with the chance to revert individual changes. Deleted options can be restored from the pending changes bar until you save.
-- **Import** options from CSV or JSON, and **export** the current choice from the Code tab as JSON (all languages) or CSV (default language).
+- **Import** options from CSV or JSON, and **export** the current choice from the Code tab as JSON or CSV, with every language. See [Importing options](#importing-options).
 
 ## Requirements
 
@@ -31,6 +31,47 @@ A [Power Platform ToolBox](https://powerplatformtoolbox.com) tool for creating a
 5. Click **Validate**, then **Review & Publish**. Review the changes and confirm.
 
 Settings (the gear icon) control language sub-rows, validation of blank translations, reordering and more.
+
+## Importing options
+
+You can import options from a variety of different formats including comma, semicolon, and tab separated values; and a simple JSON payload as well as from a modeled optionset payload you would receive from Dataverse.
+
+1. Open the choice you want to add to, or click **New** to start one. If nothing is open, importing starts a new choice.
+2. On the **Builder** tab, click **Import**.
+3. Under **Format**, choose **CSV** or **JSON**. Paste the content and click **Import**. If something can't be read, the dialog stays open and tells you what to fix.
+4. Check the rows in the grid. Any import warnings, such as a skipped column, appear in a notification.
+5. For a new global choice, fill in the name, publisher and solution in the sidebar. A CSV file only carries the options.
+6. Click **Validate**, then **Review & Publish**. Nothing is written to Dataverse until you confirm the review.
+
+**Importing into an existing choice.** Rows are matched by value. A row whose value already exists updates that option, a row with a new or blank value is added, and nothing is removed. Blank cells keep the current label or description, so a file with only French columns adds the French labels and leaves everything else as it is.
+
+### CSV
+
+```csv
+value,label_1033,description_1033,label_1036,description_1036
+100000000,Low,"Low, not urgent",Faible,Pas urgent
+100000001,High,,Élevé,
+,Medium,,Moyen,
+```
+
+- `value` is optional. Leave it blank and a value is assigned for you.
+- `label_<code>` and `description_<code>` hold one language each, by its numeric language code, such as 1033 for English, 1036 for French and 1031 for German. A column like `label_fr` is skipped, with a warning.
+- Plain `label` and `description` columns are read as the default language.
+- `externalkey` is optional and sets the external value.
+- Each language must be installed in the environment. Validation warns about any that aren't.
+- Comma, semicolon and tab separated files all work, so you can copy cells in Excel and paste them straight in. Put quotes around any cell that contains the separator or a line break.
+
+The easiest way to get the columns right is to start from an export. Open a choice, go to the **Code** tab, choose **CSV**, and click **Download**. Edit the file in Excel, then import it again.
+
+### JSON
+
+The JSON import accepts any of these:
+
+- The payload shown on the **Code** tab's JSON view, an object with an `Options` array. For a new choice it also brings in the name and display name.
+- An array of rows, or an object with a `rows` array: `[{"value": 100000000, "label": "Low", "description": "Low priority"}]`
+- Rows with several languages: `{"value": 100000000, "labels": [{"languageCode": 1033, "label": "Low"}, {"languageCode": 1036, "label": "Faible"}]}`
+
+Simple rows can also set `externalKey`, `color` (such as `"#0078d4"`) and `hidden` (`true` or `false`). Leave out `value` to have one assigned for you.
 
 ## What this tool changes
 

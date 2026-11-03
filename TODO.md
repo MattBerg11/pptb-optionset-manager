@@ -11,11 +11,6 @@ LLM: ONLY MODIFY THIS LIST WHEN EXPLICTELY APPROVED
 
 ### Not yet implemented
 
-### P0 — Blocking / Misleading
-
-
-- **Code generation exports only the default language** — `serializeDraftToTypeScript`, `serializeDraftToJavaScript`, `serializeDraftToCSharp`, and the CSV exporter silently drop all non-default-language labels. Multi-language output needs a new export shape (e.g., a nested language-keyed map for TS/JS, extra columns for CSV).
-
 ### P1 — Important Gaps
 
 - **ErrorBoundary has no recovery path** — only shows "Try Again". Add recovery actions: "Clear metadata cache", "Reset form to blank", and a link to open browser DevTools.
@@ -36,14 +31,7 @@ LLM: ONLY MODIFY THIS LIST WHEN EXPLICTELY APPROVED
 
 - idea: Save button could be complex with Save | then submenu of Save all changes; Save deletes; Save Order?
 
-environment API calls, but show what is queued for delete, modification, etc.
-
 ## Things to research
-
-- Best practice for modifying system optionsets
-    - What system publishers should I be showing (look at mxrm)
-- Figure out why the optionset creation service is pushing each piece separate rather than the expected API payload? (Is this a PPTB limitation I am forgetting)
-
 
 - rename GOS menu item
 - When an entity field is read-only in Dataverse, indicate this in the editor but allow editing on properties you can _actually_ update via API

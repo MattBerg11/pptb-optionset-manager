@@ -39,6 +39,8 @@ export interface JsonImportRow {
   /** Shorthand for optionValue */
   value?: number;
   externalKey?: string;
+  color?: string;
+  hidden?: boolean;
   /** Shorthand for a single default-language label */
   label?: string;
   description?: string;

@@ -45,24 +45,26 @@ export function parseCodeToDraft(code: string, current: OptionSetDraft): OptionS
   };
 }
 
-function getDefaultLabel(row: OptionDraftRow, defaultLanguageCode: number): string {
-    return (
-        row.labels.find((l) => l.languageCode === defaultLanguageCode)?.label ??
-        row.labels[0]?.label ??
-        ""
-    );
+function csvCell(text: string): string {
+    return `"${text.replace(/"/g, '""')}"`;
 }
 
+// One label and description column per language, default language first, in the columns the CSV import reads,
+// so an exported file can be edited and imported again without losing translations.
 export function serializeDraftToCsv(draft: OptionSetDraft): string {
+    const otherLanguages = [...new Set(draft.rows.flatMap((row) => row.labels.map((l) => l.languageCode)))]
+        .filter((languageCode) => languageCode !== draft.defaultLanguageCode)
+        .sort((a, b) => a - b);
+    const languages = [draft.defaultLanguageCode, ...otherLanguages];
+
     const rows: string[] = [];
-    rows.push("Value,Label,Description");
+    rows.push(["value", ...languages.flatMap((languageCode) => [`label_${languageCode}`, `description_${languageCode}`])].join(","));
     for (const row of draft.rows) {
-        const label = getDefaultLabel(row, draft.defaultLanguageCode);
-        const desc = row.labels.find((l) => l.languageCode === draft.defaultLanguageCode)?.description ?? "";
-        const value = row.optionValue ?? "";
-        const escapedLabel = `"${label.replace(/"/g, '""')}"`;
-        const escapedDesc = `"${desc.replace(/"/g, '""')}"`;
-        rows.push(`${value},${escapedLabel},${escapedDesc}`);
+        const cells = languages.flatMap((languageCode) => {
+            const entry = row.labels.find((l) => l.languageCode === languageCode);
+            return [csvCell(entry?.label ?? ""), csvCell(entry?.description ?? "")];
+        });
+        rows.push([row.optionValue ?? "", ...cells].join(","));
     }
     return rows.join("\n");
 }

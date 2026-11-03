@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { OptionDraftRow, OptionSetDraft } from "../models/optionSetModels";
-import { parseCodeToDraft, serializeDraftToCode } from "./codeGenerationService";
+import { parseCodeToDraft, serializeDraftToCode, serializeDraftToCsv } from "./codeGenerationService";
+import { parseImportText } from "./importParserService";
 
 const EN = 1033;
 const row: OptionDraftRow = { rowId: "r1", labels: [{ languageCode: EN, label: "Dog" }] };
@@ -122,5 +123,32 @@ describe("parseCodeToDraft", () => {
 
     it("rejects an option that is not an object", () => {
         expect(() => parseCodeToDraft('{"Options":[1]}', draft)).toThrow("index 0");
+    });
+});
+
+describe("serializeDraftToCsv", () => {
+    const FR = 1036;
+    const multi: OptionSetDraft = {
+        ...loaded,
+        rows: [
+            { rowId: "r1", optionValue: 1, labels: [{ languageCode: FR, label: "Chien", description: "Fidèle" }, { languageCode: EN, label: "Dog", description: 'A "good" dog' }] },
+            { rowId: "r2", optionValue: 2, labels: [{ languageCode: EN, label: "Cat" }] },
+        ],
+    };
+
+    it("writes a label and description column per language, default language first", () => {
+        expect(serializeDraftToCsv(multi).split("\n")).toEqual([
+            "value,label_1033,description_1033,label_1036,description_1036",
+            '1,"Dog","A ""good"" dog","Chien","Fidèle"',
+            '2,"Cat","","",""',
+        ]);
+    });
+
+    it("imports again with every language", () => {
+        const rows = parseImportText(serializeDraftToCsv(multi), "csv").draft?.rows ?? [];
+        expect(rows.map((r) => r.labels)).toEqual([
+            [{ languageCode: EN, label: "Dog", description: 'A "good" dog' }, { languageCode: FR, label: "Chien", description: "Fidèle" }],
+            [{ languageCode: EN, label: "Cat", description: "" }],
+        ]);
     });
 });
